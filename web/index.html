@@ -20,6 +20,11 @@
 
   <!-- Step 1: pick numbers -->
   <section id="stepPick">
+    <div class="card hold hide" id="holdBanner">
+      <b>Your numbers are on hold</b>
+      <div class="muted" id="holdText"></div>
+      <div class="row"><button class="btn" id="holdPay">Proceed to payment</button></div>
+    </div>
     <div class="card">
       <ul class="prizes" id="prizes"></ul>
       <div class="bar"><i id="barFill" style="width:0"></i></div>
@@ -93,7 +98,7 @@
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var API = window.RaffleAPI, board = null, selected = [], order = null, timer = null, poll = null;
+  var API = window.RaffleAPI, board = null, selected = [], order = null, timer = null, poll = null, holding = null, holdTimer = null;
 
   function peso(n) { return '₱' + Number(n).toLocaleString('en-PH'); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -101,6 +106,16 @@
     ['stepPick', 'stepDetails', 'stepPay', 'stepDone'].forEach(function (s) { $(s).classList.toggle('hide', s !== step); });
     window.scrollTo(0, 0);
     clearInterval(poll); poll = step === 'stepPick' ? setInterval(loadBoard, 20000) : null;
+    clearInterval(holdTimer); if (step === 'stepPick') { tickHold(); holdTimer = setInterval(tickHold, 1000); }
+  }
+  // While the customer has numbers on hold, the board shows a way back to the payment step.
+  function tickHold() {
+    var ms = holding ? Date.parse(holding.expiresAt) - Date.now() : 0;
+    if (ms <= 0) holding = null;
+    $('holdBanner').classList.toggle('hide', !holding);
+    if (!holding) return;
+    var s = Math.floor(ms / 1000);
+    $('holdText').textContent = 'Slots #' + holding.slots.join(', #') + ' · ' + peso(holding.amount) + ' due · ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ' left';
   }
   function saveOrderId(id) { try { id ? localStorage.setItem('raffle-order', id) : localStorage.removeItem('raffle-order'); } catch (e) {} }
   // Each reserve carries a random token so a lost response can be recovered (see recover) instead of leaving a hold the customer can't reach.
@@ -190,7 +205,7 @@
   };
 
   function showPay(o) {
-    order = o; show('stepPay');
+    order = o; holding = o; show('stepPay');
     $('paySlots').textContent = '#' + o.slots.join(', #'); $('payAmount').textContent = peso(o.amount) + ' due';
     $('payInstr').textContent = o.paymentInstructions; $('payOrderId').textContent = o.orderId; $('payErr').textContent = '';
     clearInterval(timer);
@@ -237,7 +252,9 @@
       $('doneBody').innerHTML = '<p class="muted">We could not check your order. Your reservation is safe — refresh this page to try again.</p>'; return;
     }
     if (!r.ok) { saveOrderId(null); show('stepPick'); await loadBoard(); return; }
-    var o = r.order; show('stepDone');
+    var o = r.order;
+    holding = o.status === 'PENDING' ? { orderId: o.orderId, slots: o.slots, amount: o.amount, expiresAt: o.expiresAt, paymentInstructions: o.paymentInstructions } : null;
+    show('stepDone');
     var T = {
       PAID: ['✅ Payment confirmed!', 'Keep this confirmation until the live draw.'],
       SUBMITTED: ['⏳ Payment received — waiting for verification', 'We will confirm your slots shortly. Refresh this page to check.'],
@@ -254,6 +271,7 @@
     if (o.status === 'EXPIRED' || o.status === 'REJECTED' || o.status === 'RELEASED') saveOrderId(null);
   }
   $('doneAgain').onclick = async function () { show('stepPick'); await loadBoard(); };
+  $('holdPay').onclick = function () { showPay(holding); };
 
   (async function init() {
     if (API.demo) $('demoBanner').classList.remove('hide');
