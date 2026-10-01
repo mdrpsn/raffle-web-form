@@ -47,6 +47,8 @@ button.btn:disabled{opacity:.5;cursor:default}
 .err{color:var(--err);font-weight:600;margin:.6rem 0}
 .pay{white-space:pre-wrap;background:var(--bg);border:1px dashed var(--brand);border-radius:10px;padding:10px;margin:.5rem 0}
 .amount{font-size:1.8rem;font-weight:800;color:var(--accent)}
+.qrbox{text-align:center;margin:.6rem 0}
+.qr{display:block;width:100%;max-width:260px;height:auto;margin:0 auto .4rem;border-radius:12px;border:1px solid var(--line)}
 .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.78rem;font-weight:700;border:1px solid}
 .pill.PAID{background:var(--paid);border-color:var(--paid-b);color:var(--paid-ink)}.pill.SUBMITTED{background:var(--pend);border-color:var(--pend-b);color:var(--ink)}
 .pill.PENDING{background:var(--pend);border-color:var(--pend-b);color:var(--ink)}.pill.EXPIRED,.pill.REJECTED,.pill.RELEASED{background:var(--line);border-color:var(--mute);color:var(--mute)}

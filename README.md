@@ -57,6 +57,9 @@ Put the contents of `web/` online and set `API_URL` in `web/config.js` to the UR
 
 Customer link: `https://your-site/` · Admin link: `https://your-site/admin.html` (PIN-protected; not linked anywhere).
 
+Payment QR: the payment step shows `web/gcash-qr.jpg` above the text from the `paymentInstructions` Config cell.
+Replace that image with your own QR (or delete it to hide the QR) and redeploy.
+
 ### 3. Run a raffle
 1. Share the customer link in your Facebook group/page.
 2. Open the admin page. **Needs review** lists each reservation with the proof link

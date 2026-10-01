@@ -65,6 +65,10 @@
       <h2>Send your payment</h2>
       <div class="muted">Slots <b id="paySlots"></b> are held for you for <b id="countdown"></b>.</div>
       <div class="amount" id="payAmount"></div>
+      <div class="qrbox" id="qrBox">
+        <a href="gcash-qr.jpg" target="_blank" rel="noopener"><img class="qr" src="gcash-qr.jpg" width="640" height="964" alt="GCash QR code to scan and pay" onerror="document.getElementById('qrBox').classList.add('hide')"></a>
+        <div class="muted">Scan with GCash, or send to the number below. Tap the QR to enlarge or save it.</div>
+      </div>
       <div class="pay" id="payInstr"></div>
       <label for="proof">Upload your payment screenshot</label>
       <input id="proof" type="file" accept="image/*">
