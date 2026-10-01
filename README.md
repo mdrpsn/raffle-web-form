@@ -16,13 +16,14 @@ screenshots in your Google Drive.
 ```
 web/        index.html (customers)  admin.html (you)  api.js  config.js  style.css
 backend/    Code.gs  — paste into Apps Script
-tests/      e2e.js   — browser test of the whole flow (demo mode)
+tests/      e2e.js   — browser test of the whole flow (offline preview)
 ```
 
-## Try it now (demo mode, no setup)
+## Try it offline (optional preview, no setup)
 
-`config.js` ships with an empty `API_URL`, so the site runs against fake data stored in
-your own browser. Admin PIN in demo mode is `1234`.
+With `API_URL` empty in `web/config.js`, the site runs against fake data stored in your own
+browser instead of the live backend. The admin PIN in this offline preview is `1234`. The
+published site sets `API_URL` to the Apps Script web app, so it is always live.
 
 ```bash
 python3 -m http.server 8765 --directory web     # then open http://localhost:8765
@@ -100,10 +101,10 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
 - The board polls every 20 s; a customer sees "just taken" at submit time, never a double booking.
 
 ## Tests
-`tests/e2e.js` drives the real pages in Chromium (demo mode): reserve → race for the same slot →
-upload proof → approve → public board → reject → freeze → three draws with no repeat winner.
-`Code.gs` itself can only run inside Google, so the same rules are mirrored in the demo
-backend in `api.js` and tested there; do one live dry run (reserve, upload, approve) after deploying.
+`tests/e2e.js` drives the real pages in Chromium (offline preview, with `API_URL` empty): reserve → race for the
+same slot → upload proof → approve → public board → reject → freeze → three draws with no repeat winner.
+`Code.gs` itself can only run inside Google, so the same rules are mirrored in the offline backend
+in `api.js` and tested there; do one live dry run (reserve, upload, approve) after deploying.
 
 ```bash
 python3 -m http.server 8765 --directory web &

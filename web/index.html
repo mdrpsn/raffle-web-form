@@ -15,7 +15,6 @@
 <body>
 <div class="wrap">
   <img class="hero" src="banner.jpg" width="960" height="400" alt="Got Cha Dink Club — Dink. Rally. Laugh. Repeat.">
-  <div id="demoBanner" class="muted hide">DEMO MODE — data stays in this browser. Set API_URL in config.js to go live.</div>
   <div class="club" id="club"></div>
   <h1 id="title">Loading…</h1>
 
@@ -336,7 +335,11 @@
   $('openRules').onclick = function (e) { e.preventDefault(); $('rules').open = true; $('rules').scrollIntoView({ behavior: 'smooth' }); };
 
   (async function init() {
-    if (API.demo) $('demoBanner').classList.remove('hide');
+    if (API.offline) { // offline preview: only built when API_URL is empty, so the live page carries no such banner
+      var note = document.createElement('div'); note.className = 'muted';
+      note.textContent = 'Offline preview — data stays in this browser. Set API_URL in config.js to go live.';
+      $('title').before(note);
+    }
     await loadBoard();
     var id = savedOrderId(), token = savedAttempt();
     if (!id && token) { // a reserve whose response never arrived: find it on the server

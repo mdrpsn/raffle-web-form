@@ -1,4 +1,4 @@
-// Talks to the Apps Script backend, or to a localStorage fake when API_URL is empty (demo mode).
+// Talks to the Apps Script backend, or to a localStorage fake when API_URL is empty (offline preview).
 (function () {
   var CFG = window.RAFFLE_CONFIG || {};
   var DEMO = !CFG.API_URL;
@@ -18,7 +18,7 @@
     } finally { clearTimeout(timer); }
   }
 
-  // ---------------- demo backend ----------------
+  // ---------------- offline preview backend ----------------
   var KEY = 'raffle-demo-v1';
   function load() {
     var s = null; try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
@@ -137,5 +137,5 @@
       return { ok: false, network: true, error: 'Network problem. Please try again.' };
     }
   }
-  window.RaffleAPI = { call: call, demo: DEMO };
+  window.RaffleAPI = { call: call, offline: DEMO };
 })();
