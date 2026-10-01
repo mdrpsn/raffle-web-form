@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paddle Raffle</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <div id="demoBanner" class="muted hide">DEMO MODE — data stays in this browser. Set API_URL in config.js to go live.</div>
+  <div class="club" id="club"></div>
+  <h1 id="title">Loading…</h1>
+
+  <!-- Step 1: pick numbers -->
+  <section id="stepPick">
+    <div class="card">
+      <ul class="prizes" id="prizes"></ul>
+      <div class="bar"><i id="barFill" style="width:0"></i></div>
+      <div class="muted" id="progress"></div>
+      <div id="winners"></div>
+    </div>
+    <div class="card">
+      <h2>Pick your number/s</h2>
+      <div class="legend">
+        <span><b style="background:var(--avail);border-color:var(--avail-b)"></b>Available</span>
+        <span><b style="background:var(--pend);border-color:var(--pend-b)"></b>Pending payment</span>
+        <span><b style="background:var(--paid);border-color:var(--paid-b)"></b>Secured</span>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+    <div class="sticky hide" id="sticky"><div>
+      <div><b id="selCount"></b><div class="muted" id="selNums"></div></div>
+      <button class="btn" id="goDetails">Continue</button>
+    </div></div>
+  </section>
+
+  <!-- Step 2: your details -->
+  <section id="stepDetails" class="hide">
+    <div class="card">
+      <h2>Your details</h2>
+      <div class="muted" id="detailsSummary"></div>
+      <form id="detailsForm" autocomplete="on">
+        <label for="name">Full name</label><input id="name" name="name" autocomplete="name" required maxlength="60">
+        <label for="mobile">Mobile number</label><input id="mobile" name="mobile" inputmode="tel" autocomplete="tel" placeholder="09XXXXXXXXX" required>
+        <label for="fb">Facebook name</label><input id="fb" name="fb" required maxlength="80">
+        <div class="err" id="detailsErr"></div>
+        <div class="row">
+          <button type="button" class="btn ghost" id="backPick">Back</button>
+          <button class="btn" id="reserveBtn">Reserve my numbers</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- Step 3: pay + upload proof -->
+  <section id="stepPay" class="hide">
+    <div class="card">
+      <h2>Send your payment</h2>
+      <div class="muted">Slots <b id="paySlots"></b> are held for you for <b id="countdown"></b>.</div>
+      <div class="amount" id="payAmount"></div>
+      <div class="pay" id="payInstr"></div>
+      <label for="proof">Upload your payment screenshot</label>
+      <input id="proof" type="file" accept="image/*">
+      <div class="err" id="payErr"></div>
+      <div class="row"><button class="btn" id="sendProof">Submit proof of payment</button></div>
+      <div class="muted" style="margin-top:.6rem">Order ID: <b id="payOrderId"></b> — bookmark this page; it saves your order.</div>
+    </div>
+  </section>
+
+  <!-- Step 4: status -->
+  <section id="stepDone" class="hide">
+    <div class="card">
+      <h2 id="doneTitle"></h2>
+      <div id="doneBody"></div>
+      <div class="row"><button class="btn ghost" id="doneAgain">Back to the board</button></div>
+    </div>
+  </section>
+</div>
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var API = window.RaffleAPI, board = null, selected = [], order = null, timer = null, poll = null;
+
+  function peso(n) { return '₱' + Number(n).toLocaleString('en-PH'); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function show(step) {
+    ['stepPick', 'stepDetails', 'stepPay', 'stepDone'].forEach(function (s) { $(s).classList.toggle('hide', s !== step); });
+    window.scrollTo(0, 0);
+    clearInterval(poll); poll = step === 'stepPick' ? setInterval(loadBoard, 20000) : null;
+  }
+  function saveOrderId(id) { try { id ? localStorage.setItem('raffle-order', id) : localStorage.removeItem('raffle-order'); } catch (e) {} }
+  function savedOrderId() { try { return new URLSearchParams(location.search).get('order') || localStorage.getItem('raffle-order'); } catch (e) { return null; } }
+
+  async function loadBoard() {
+    var r = await API.call('board');
+    if (!r.ok) { $('title').textContent = 'Could not load the raffle'; return; }
+    board = r; render();
+  }
+
+  function render() {
+    var R = board.raffle;
+    document.title = R.name + ' — ' + R.clubName;
+    $('club').textContent = R.clubName; $('title').textContent = R.name;
+    $('prizes').innerHTML = R.prizes.map(function (p) { return '<li>🏆 ' + esc(p) + '</li>'; }).join('');
+    var paid = board.slots.filter(function (s) { return s.status === 'PAID'; }).length;
+    var avail = board.slots.filter(function (s) { return s.status === 'AVAILABLE'; }).length;
+    $('barFill').style.width = (paid / R.total * 100) + '%';
+    $('progress').textContent = peso(R.price) + ' per slot · ' + paid + ' of ' + R.total + ' secured · ' + avail + ' available';
+    $('winners').innerHTML = board.winners.length ? '<h2 style="margin-top:.8rem">Winners</h2>' + board.winners.map(function (w) {
+      return '<div class="win">🎉 ' + esc(w.prize) + ' — #' + w.slot + ' ' + esc(w.name) + '</div>'; }).join('') : '';
+    // drop selections that someone else just took
+    selected = selected.filter(function (n) { return board.slots[n - 1].status === 'AVAILABLE'; });
+    var closed = R.status !== 'OPEN';
+    $('grid').innerHTML = board.slots.map(function (s) {
+      var sel = selected.indexOf(s.n) >= 0, dis = closed || s.status !== 'AVAILABLE';
+      return '<button type="button" class="slot ' + s.status + (sel ? ' sel' : '') + '" data-n="' + s.n + '"' + (dis ? ' disabled' : '') +
+        ' aria-label="Number ' + s.n + ', ' + s.status + '">' + s.n + '<small>' + esc(s.label || ' ') + '</small></button>';
+    }).join('');
+    if (closed) $('progress').textContent += ' · Registration closed';
+    updateSticky();
+  }
+
+  function updateSticky() {
+    var R = board.raffle, n = selected.length;
+    $('sticky').classList.toggle('hide', !n || $('stepPick').classList.contains('hide'));
+    $('selCount').textContent = n + ' slot' + (n === 1 ? '' : 's') + ' · ' + peso(n * R.price);
+    $('selNums').textContent = '#' + selected.slice().sort(function (a, b) { return a - b; }).join(', #');
+  }
+
+  $('grid').addEventListener('click', function (e) {
+    var b = e.target.closest('.slot'); if (!b || b.disabled) return;
+    var n = Number(b.dataset.n), i = selected.indexOf(n);
+    if (i >= 0) selected.splice(i, 1);
+    else if (selected.length >= board.raffle.maxSlotsPerOrder) return;
+    else selected.push(n);
+    b.classList.toggle('sel', i < 0); updateSticky();
+  });
+
+  $('goDetails').onclick = function () {
+    selected.sort(function (a, b) { return a - b; });
+    $('detailsSummary').textContent = 'Slots #' + selected.join(', #') + ' — total ' + peso(selected.length * board.raffle.price);
+    try { var d = JSON.parse(localStorage.getItem('raffle-me') || '{}'); $('name').value = d.name || ''; $('mobile').value = d.mobile || ''; $('fb').value = d.fb || ''; } catch (e) {}
+    $('detailsErr').textContent = ''; show('stepDetails'); $('sticky').classList.add('hide');
+  };
+  $('backPick').onclick = function () { show('stepPick'); updateSticky(); };
+
+  $('detailsForm').onsubmit = async function (e) {
+    e.preventDefault();
+    var btn = $('reserveBtn'); btn.disabled = true; $('detailsErr').textContent = '';
+    var me = { name: $('name').value, mobile: $('mobile').value, fb: $('fb').value };
+    var r = await API.call('reserve', { name: me.name, mobile: me.mobile, facebook: me.fb, slots: selected });
+    btn.disabled = false;
+    if (!r.ok) {
+      $('detailsErr').textContent = r.error;
+      if (r.taken) { await loadBoard(); }
+      return;
+    }
+    try { localStorage.setItem('raffle-me', JSON.stringify(me)); } catch (e2) {}
+    saveOrderId(r.orderId); selected = [];
+    showPay({ orderId: r.orderId, slots: r.slots, amount: r.amount, expiresAt: r.expiresAt, paymentInstructions: r.paymentInstructions });
+  };
+
+  function showPay(o) {
+    order = o; show('stepPay');
+    $('paySlots').textContent = '#' + o.slots.join(', #'); $('payAmount').textContent = peso(o.amount) + ' due';
+    $('payInstr').textContent = o.paymentInstructions; $('payOrderId').textContent = o.orderId; $('payErr').textContent = '';
+    clearInterval(timer);
+    function tick() {
+      var ms = Date.parse(o.expiresAt) - Date.now();
+      if (ms <= 0) { $('countdown').textContent = '0:00'; clearInterval(timer); return; }
+      var s = Math.floor(ms / 1000); $('countdown').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }
+    tick(); timer = setInterval(tick, 1000);
+  }
+
+  // Shrink screenshots in the browser so uploads are small and fast.
+  function compress(file) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image(), url = URL.createObjectURL(file);
+      img.onload = function () {
+        var max = 1400, k = Math.min(1, max / Math.max(img.width, img.height));
+        var c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.8).split(',')[1]);
+      };
+      img.onerror = function () { reject(new Error('That file is not a readable image.')); };
+      img.src = url;
+    });
+  }
+
+  $('sendProof').onclick = async function () {
+    var f = $('proof').files[0]; $('payErr').textContent = '';
+    if (!f) { $('payErr').textContent = 'Choose your payment screenshot first.'; return; }
+    var btn = $('sendProof'); btn.disabled = true; btn.textContent = 'Uploading…';
+    try {
+      var data = await compress(f);
+      var r = await API.call('proof', { orderId: order.orderId, mime: 'image/jpeg', data: data });
+      if (!r.ok) throw new Error(r.error);
+      await showStatus(order.orderId);
+    } catch (e) { $('payErr').textContent = e.message; }
+    btn.disabled = false; btn.textContent = 'Submit proof of payment';
+  };
+
+  async function showStatus(id) {
+    var r = await API.call('order', { orderId: id });
+    if (!r.ok) { saveOrderId(null); show('stepPick'); await loadBoard(); return; }
+    var o = r.order; show('stepDone');
+    var T = {
+      PAID: ['✅ Payment confirmed!', 'Keep this confirmation until the live draw.'],
+      SUBMITTED: ['⏳ Payment received — waiting for verification', 'We will confirm your slots shortly. Refresh this page to check.'],
+      PENDING: ['Awaiting your payment', 'Your numbers are on hold. Upload your screenshot before time runs out.'],
+      EXPIRED: ['Reservation expired', 'The hold ran out before proof was uploaded. Please pick your numbers again.'],
+      REJECTED: ['Payment not verified', 'Please message the club for help.'],
+      RELEASED: ['Slots released', 'These slots were released. Please message the club.'],
+    }[o.status] || [o.status, ''];
+    $('doneTitle').textContent = T[0];
+    $('doneBody').innerHTML = '<p class="muted">' + T[1] + '</p><p><b>' + esc(o.raffleName) + '</b><br>' + esc(o.name) +
+      '<br>Slots: #' + o.slots.join(', #') + '<br>Amount: ' + peso(o.amount) + '<br>Status: <span class="pill ' + o.status + '">' + o.status + '</span>' +
+      '<br>Order ID: ' + esc(o.orderId) + '</p>' + (o.status === 'PENDING' ? '<button class="btn" id="resumePay">Upload payment proof</button>' : '');
+    var rp = $('resumePay'); if (rp) rp.onclick = function () { showPay({ orderId: o.orderId, slots: o.slots, amount: o.amount, expiresAt: o.expiresAt, paymentInstructions: o.paymentInstructions }); };
+    if (o.status === 'EXPIRED' || o.status === 'REJECTED' || o.status === 'RELEASED') saveOrderId(null);
+  }
+  $('doneAgain').onclick = async function () { show('stepPick'); await loadBoard(); };
+
+  (async function init() {
+    if (API.demo) $('demoBanner').classList.remove('hide');
+    await loadBoard();
+    var id = savedOrderId();
+    if (id) await showStatus(id);
+    else show('stepPick');
+  })();
+})();
+</script>
+</body>
+</html>

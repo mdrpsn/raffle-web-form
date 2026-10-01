@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Raffle Admin</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Raffle admin</h1>
+  <div id="login" class="card">
+    <label for="pin">Admin PIN</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="current-password">
+    <div class="err" id="loginErr"></div>
+    <div class="row"><button class="btn" id="loginBtn">Sign in</button></div>
+  </div>
+
+  <div id="panel" class="hide">
+    <div class="card"><div class="stats" id="stats"></div></div>
+    <div class="tabs">
+      <button class="btn small" data-tab="review">Needs review</button>
+      <button class="btn small ghost" data-tab="all">All orders</button>
+      <button class="btn small ghost" id="refresh" style="margin-left:auto">Refresh</button>
+    </div>
+    <div id="orders"></div>
+
+    <div class="card">
+      <h2>Draw</h2>
+      <div class="muted" id="drawInfo"></div>
+      <div id="winnersList"></div>
+      <div class="row">
+        <button class="btn" id="freezeBtn">Close &amp; freeze final entries</button>
+        <button class="btn" id="drawBtn">Draw next prize</button>
+      </div>
+      <div class="err" id="drawErr"></div>
+    </div>
+  </div>
+</div>
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var API = window.RaffleAPI, pin = '', tab = 'review', data = null;
+  try { pin = sessionStorage.getItem('raffle-pin') || ''; } catch (e) {}
+
+  function peso(n) { return '₱' + Number(n).toLocaleString('en-PH'); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  async function act(action, extra) {
+    return API.call(action, Object.assign({ pin: pin }, extra || {}));
+  }
+
+  async function load() {
+    var r = await act('adminList');
+    if (!r.ok) {
+      $('login').classList.remove('hide'); $('panel').classList.add('hide'); $('loginErr').textContent = pin ? r.error : '';
+      try { sessionStorage.removeItem('raffle-pin'); } catch (e) {} return;
+    }
+    try { sessionStorage.setItem('raffle-pin', pin); } catch (e) {}
+    data = r; $('login').classList.add('hide'); $('panel').classList.remove('hide'); render();
+  }
+
+  function confirmationText(o) {
+    return 'Payment confirmed! 🎟️\n\nName: ' + o.name + '\nRaffle: ' + o.raffleName + '\nSlots: #' + o.slots.join(', #') +
+      '\nAmount: ' + peso(o.amount) + '\nStatus: SECURED\n\nPlease keep this confirmation until the live draw.';
+  }
+
+  function render() {
+    var s = data.stats;
+    $('stats').innerHTML = [['Total', s.total], ['Paid', s.paid], ['Pending', s.pending], ['Available', s.available],
+      ['Collected', peso(s.collected)], ['Potential left', peso(s.potential)]].map(function (x) {
+      return '<div><span class="muted">' + x[0] + '</span><b>' + x[1] + '</b></div>'; }).join('');
+    document.querySelectorAll('[data-tab]').forEach(function (b) { b.classList.toggle('ghost', b.dataset.tab !== tab); });
+    var list = data.orders.filter(function (o) { return tab === 'all' || o.status === 'SUBMITTED' || o.status === 'PENDING'; });
+    $('orders').innerHTML = list.length ? list.map(function (o) {
+      var proof = o.proofUrl ? (o.proofUrl.indexOf('data:') === 0 ? '<a href="' + esc(o.proofUrl) + '" target="_blank" rel="noopener">View proof</a>'
+        : '<a href="' + esc(o.proofUrl) + '" target="_blank" rel="noopener">View proof (Drive)</a>') : '<span class="muted">No proof yet</span>';
+      var btns = '';
+      if (['PENDING', 'SUBMITTED', 'EXPIRED'].indexOf(o.status) >= 0) btns += '<button class="btn small" data-a="approve" data-id="' + o.orderId + '">Approve</button>';
+      if (['PENDING', 'SUBMITTED'].indexOf(o.status) >= 0) btns += '<button class="btn small bad" data-a="reject" data-id="' + o.orderId + '">Reject</button>';
+      if (o.status === 'PAID') btns += '<button class="btn small ghost" data-a="copy" data-id="' + o.orderId + '">Copy confirmation</button>' +
+        '<button class="btn small bad" data-a="release" data-id="' + o.orderId + '">Release slots</button>';
+      return '<div class="card"><div><b>' + esc(o.name) + '</b> <span class="pill ' + o.status + '">' + o.status + '</span></div>' +
+        '<div class="muted">' + esc(o.mobile) + ' · FB: ' + esc(o.facebook) + '</div>' +
+        '<div>Slots #' + o.slots.join(', #') + ' — <b>' + peso(o.amount) + '</b></div><div>' + proof + '</div>' +
+        '<div class="row">' + btns + '</div></div>';
+    }).join('') : '<div class="card muted">Nothing here.</div>';
+    $('drawInfo').textContent = data.frozen ? 'Entries are frozen. ' + data.winners.length + ' of ' + data.prizes.length + ' prizes drawn.'
+      : 'Close registration and freeze the paid entries before drawing.';
+    $('winnersList').innerHTML = data.winners.map(function (w) { return '<div class="win">🎉 ' + esc(w.prize) + ' — #' + w.slot + ' ' + esc(w.name) + '</div>'; }).join('');
+    $('freezeBtn').disabled = data.frozen; $('drawBtn').disabled = !data.frozen || data.winners.length >= data.prizes.length;
+  }
+
+  $('orders').addEventListener('click', async function (e) {
+    var b = e.target.closest('button[data-a]'); if (!b) return;
+    var o = data.orders.filter(function (x) { return x.orderId === b.dataset.id; })[0], a = b.dataset.a;
+    if (a === 'copy') { try { await navigator.clipboard.writeText(confirmationText(o)); b.textContent = 'Copied ✓'; } catch (err) { prompt('Copy this:', confirmationText(o)); } return; }
+    if ((a === 'reject' || a === 'release') && !confirm(a === 'reject' ? 'Reject this payment and free the numbers?' : 'Release these PAID slots back to the pool?')) return;
+    var r = await act(a, { orderId: o.orderId });
+    if (!r.ok) alert(r.error);
+    await load();
+  });
+
+  document.querySelectorAll('[data-tab]').forEach(function (b) { b.onclick = function () { tab = b.dataset.tab; render(); }; });
+  $('refresh').onclick = load;
+  $('loginBtn').onclick = function () { pin = $('pin').value; load(); };
+  $('pin').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('loginBtn').click(); });
+  $('freezeBtn').onclick = async function () {
+    if (!confirm('This closes registration, rejects unpaid holds, and locks the final entry list. Continue?')) return;
+    var r = await act('freeze'); $('drawErr').textContent = r.ok ? '' : r.error; await load();
+  };
+  $('drawBtn').onclick = async function () {
+    var r = await act('draw'); $('drawErr').textContent = r.ok ? '' : r.error; await load();
+  };
+  if (pin) load();
+})();
+</script>
+</body>
+</html>
