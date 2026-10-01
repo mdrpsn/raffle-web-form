@@ -52,6 +52,19 @@ function setup() {
     '  (change it: Project Settings > Script properties > ADMIN_PIN)');
 }
 
+/** Runs on a 5-minute timer (see installKeepWarm): calls the web app so the first visitor rarely meets a cold start. */
+function keepWarm() {
+  var res = UrlFetchApp.fetch(ScriptApp.getService().getUrl() + '?action=order&orderId=keepwarm', { muteHttpExceptions: true });
+  Logger.log('keepWarm: HTTP ' + res.getResponseCode());
+}
+
+/** Run once from the editor. Safe to re-run: it replaces any earlier keepWarm trigger. */
+function installKeepWarm() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'keepWarm') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('keepWarm').timeBased().everyMinutes(5).create();
+  Logger.log('keepWarm will run every 5 minutes.');
+}
+
 function sheet_(name, header) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(name) || ss.insertSheet(name);
@@ -63,7 +76,12 @@ function sheet_(name, header) {
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
-  return run_(p.action || 'board', p);
+  var action = p.action || 'board';
+  if (action === 'board') { // served from cache when fresh: no lock, no sheet reads
+    var hit = CacheService.getScriptCache().get('board');
+    if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
+  }
+  return run_(action, p);
 }
 
 function doPost(e) {
@@ -76,6 +94,8 @@ function doPost(e) {
 function publicActions_() { return { board: board_, order: orderStatus_, reserve: reserve_, resume: resume_, proof: proof_ }; }
 function adminActions_() { return { adminList: adminList_, approve: approve_, reject: reject_, release: release_, freeze: freeze_, draw: draw_ }; }
 
+var READ_ONLY = { board: 1, order: 1, resume: 1, adminList: 1 }; // any other action changes the board, so its cached copy is dropped
+
 function run_(action, p) {
   var lock = LockService.getScriptLock();
   try {
@@ -85,7 +105,11 @@ function run_(action, p) {
   }
   try {
     var pub = publicActions_(), adm = adminActions_();
-    if (pub[action]) return json_(pub[action](p));
+    if (pub[action]) {
+      var out = pub[action](p);
+      if (action === 'board') CacheService.getScriptCache().put('board', JSON.stringify(out), 20);
+      return json_(out);
+    }
     if (adm[action]) {
       if (!pinOk_(p.pin)) { Utilities.sleep(700); return json_({ ok: false, error: 'Wrong PIN' }); }
       return json_(adm[action](p));
@@ -94,6 +118,7 @@ function run_(action, p) {
   } catch (err) {
     return json_({ ok: false, error: String(err.message || err) });
   } finally {
+    if (!READ_ONLY[action]) CacheService.getScriptCache().remove('board');
     lock.releaseLock();
   }
 }

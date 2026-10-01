@@ -45,6 +45,11 @@ python3 -m http.server 8765 --directory web     # then open http://localhost:876
 
    > After any later edit to `Code.gs`, use **Deploy → Manage deployments → Edit → New version**,
    > otherwise the live URL keeps running the old code.
+6. Optional but recommended: pick `installKeepWarm` in the function dropdown and **Run** it once (approve the
+   permissions). It adds a 5-minute timer that pings the web app so visitors rarely hit a slow cold start.
+   The board is also cached for 20 seconds; any reservation, approval or rejection refreshes it immediately.
+   Run `installKeepWarm` **before** deploying a version that contains `keepWarm`, or the live URL will ask for
+   authorization and fail until you do.
 
 ### 2. Front end — pick one free host
 Put the contents of `web/` online and set `API_URL` in `web/config.js` to the URL from step 1.5 first.
