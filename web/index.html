@@ -19,6 +19,57 @@
   <div class="club" id="club"></div>
   <h1 id="title">Loading…</h1>
 
+  <details class="card rules" id="rules">
+    <summary>📋 How to join &amp; raffle mechanics</summary>
+    <div class="rules-body">
+      <h3>Paddle Drop #01 — The Purple Drop</h3>
+      <p><b>Prize paddle:</b> Kamito Alpha X Her Purple<br><b>100 slots only</b> · <b>₱150 per slot</b></p>
+
+      <h3>How to join</h3>
+      <ol>
+        <li>Choose your available number/s from 1 to 100.</li>
+        <li>Fill in your complete details.</li>
+        <li>Send payment using the payment instructions provided.</li>
+        <li>Upload your proof of payment through the raffle page.</li>
+        <li>Your slot is officially secured only after payment has been received and verified by Got Cha Dink Club.</li>
+        <li>Reserved but unpaid slots may be released and made available again.</li>
+        <li>Players may purchase more than one slot.</li>
+        <li>Slots are first paid, first secured.</li>
+      </ol>
+
+      <h3>Prize structure</h3>
+      <ul class="plain">
+        <li>🥇 <b>1st Prize</b> — Kamito Alpha X Her Purple Paddle</li>
+        <li>🥈 <b>2nd Prize</b> — Free Got Cha Dink Club Open Play + Edge Guard + Grip Tape</li>
+        <li>🥉 <b>3rd Prize</b> — Free Got Cha Dink Club Open Play</li>
+      </ul>
+
+      <h3>Winner rule</h3>
+      <p>Only one prize may be won by each person per draw.</p>
+      <p>If a player owns multiple slot numbers and one of their numbers is drawn as a winner, all of that player’s remaining numbers will no longer be eligible for the succeeding prizes in that same draw.</p>
+      <p>If another number belonging to the same winner is drawn, a redraw will be conducted until a different winner is selected.</p>
+      <p>This ensures three different winners for every raffle draw.</p>
+
+      <h3>Live draw</h3>
+      <p>The draw will take place only after all 100 slots are fully paid and secured.</p>
+      <p>Once the board is complete, Got Cha Dink Club will announce the official Live Draw schedule.</p>
+      <p>The draw will be streamed live on the official Got Cha Dink Club Facebook page.</p>
+
+      <h3>Additional rules</h3>
+      <ol type="a">
+        <li>All secured slots are final and non-refundable.</li>
+        <li>All prizes are non-convertible to cash.</li>
+        <li>Prizes may not be exchanged for another prize or cash equivalent.</li>
+      </ol>
+      <p>Got Cha Dink Club reserves the right to verify payments and participant details before confirming a slot.</p>
+      <p>Any unpaid, incomplete, duplicate, or invalid reservation may be cancelled or released.</p>
+      <p>The slot number shown as secured after verification will be the participant’s official raffle number.</p>
+      <p>Participants are responsible for entering accurate contact information.</p>
+      <p>By joining the raffle, participants agree to these mechanics and the result of the official live draw.</p>
+      <p><b>Please secure your slot only through the official Got Cha Dink Club raffle page.</b></p>
+    </div>
+  </details>
+
   <!-- Step 1: pick numbers -->
   <section id="stepPick">
     <div class="card hold hide" id="holdBanner">
@@ -56,6 +107,7 @@
         <label for="name">Full name</label><input id="name" name="name" autocomplete="name" required maxlength="60">
         <label for="mobile">Mobile number</label><input id="mobile" name="mobile" inputmode="tel" autocomplete="tel" placeholder="09XXXXXXXXX" required>
         <label for="fb">Facebook name</label><input id="fb" name="fb" required maxlength="80">
+        <div class="muted" style="margin-top:.8rem">By reserving, you agree to the <a href="#rules" id="openRules">raffle mechanics</a>.</div>
         <div class="err" id="detailsErr"></div>
         <div class="row">
           <button type="button" class="btn ghost" id="backPick">Back</button>
@@ -281,6 +333,7 @@
   }
   $('doneAgain').onclick = async function () { show('stepPick'); await loadBoard(); };
   $('holdPay').onclick = function () { showPay(holding); };
+  $('openRules').onclick = function (e) { e.preventDefault(); $('rules').open = true; $('rules').scrollIntoView({ behavior: 'smooth' }); };
 
   (async function init() {
     if (API.demo) $('demoBanner').classList.remove('hide');

@@ -48,6 +48,15 @@ button.btn:disabled{opacity:.5;cursor:default}
 .notice{position:sticky;top:8px;z-index:5;margin:8px 0;padding:10px 14px;border-radius:10px;font-weight:700;background:var(--card);color:var(--ink);border:2px solid var(--line);box-shadow:0 4px 14px rgba(15,27,51,.2)}
 .notice.busy{border-color:var(--yellow)}.notice.ok{border-color:#2e9d5b}.notice.bad{border-color:var(--err);color:var(--err)}
 .hold{border:2px solid var(--brand)}
+.rules{padding:0}
+.rules summary{cursor:pointer;font-weight:800;padding:14px;list-style-position:inside}
+.rules[open] summary{border-bottom:1px solid var(--line)}
+.rules-body{padding:4px 14px 14px;font-size:.95rem}
+.rules-body h3{font-size:1rem;margin:1.1rem 0 .3rem;color:var(--accent)}
+.rules-body p{margin:.35rem 0}
+.rules-body ol,.rules-body ul{margin:.3rem 0;padding-left:1.3rem}
+.rules-body li{margin:.25rem 0}
+.rules-body ul.plain{list-style:none;padding-left:0}
 .qrbox{text-align:center;margin:.6rem 0}
 .qr{display:block;width:100%;max-width:260px;height:auto;margin:0 auto .4rem;border-radius:12px;border:1px solid var(--line)}
 .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.78rem;font-weight:700;border:1px solid}
