@@ -244,12 +244,16 @@ function reserve_(p) {
     return { ok: false, error: 'Sorry, just taken: #' + taken.join(', #') + '. Please pick others.', taken: taken };
   }
 
-  var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10).toUpperCase();
+  // Leading letter: an all-digit id (or 1234E5678) would be stored by Sheets as a number and never match on lookup.
+  var id = 'R' + Utilities.getUuid().replace(/-/g, '').slice(0, 9).toUpperCase();
   uniq.sort(function (a, b) { return a - b; });
   var amount = uniq.length * Number(cfg.price);
   var expires = new Date(Date.now() + Number(cfg.holdMinutes) * 60000).toISOString();
-  ordersSheet_().appendRow([id, new Date().toISOString(), name, mobile, fb, uniq.join(','), amount,
-    'PENDING', expires, '', '', '', '']);
+  var sh = ordersSheet_(), row = sh.getLastRow() + 1;
+  // Set text format on this row's Name/Mobile/Facebook before writing, or Sheets turns 0917... into the number 917...
+  sh.getRange(row, OC.Name + 1, 1, 3).setNumberFormat('@');
+  sh.getRange(row, 1, 1, ORDER_COLS.length).setValues([[id, new Date().toISOString(), name, mobile, fb, uniq.join(','), amount,
+    'PENDING', expires, '', '', '', '']]);
   setSlots_(uniq, 'PENDING', id);
   return { ok: true, orderId: id, slots: uniq, amount: amount, expiresAt: expires,
     paymentInstructions: cfg.paymentInstructions };
