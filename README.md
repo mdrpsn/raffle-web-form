@@ -74,7 +74,8 @@ Customer link: `https://your-site/` · Admin link: `https://your-site/admin.html
 - **Double booking:** every write takes a script lock and rechecks the slot, so two people
   grabbing #27 at once get one winner and one "just taken" message.
 - **Hoarding:** unpaid holds expire; one mobile number can have at most 3 open reservations.
-- **Late payers:** approving an expired order works only if nobody else has taken the numbers since.
+- **Clean sheet:** expired, rejected and released orders free their slots and their row is deleted from the
+  `Orders` tab (the payment screenshot stays in Drive). An expired hold can't be approved late; the customer picks again.
 - **Privacy:** the public board shows only "Maria S."; mobile numbers and screenshots are admin-only,
   and screenshots are stored privately in your Drive (not public links).
 - **Sheet injection:** name/FB/mobile columns are plain-text formatted so typed text can't run as a formula.

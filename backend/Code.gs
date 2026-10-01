@@ -4,7 +4,8 @@
  *
  * Slot lifecycle:  AVAILABLE -> PENDING (reserved) -> PAID (secured)
  * Order lifecycle: PENDING -> SUBMITTED (proof uploaded) -> PAID
- *                  PENDING -> EXPIRED (no proof within holdMinutes) | REJECTED | RELEASED
+ *                  An order that expires (no proof within holdMinutes), is rejected or is released
+ *                  frees its slots and its row is deleted from the Orders sheet.
  */
 
 var ORDER_COLS = ['OrderId', 'CreatedAt', 'Name', 'Mobile', 'Facebook', 'Slots', 'Amount',
@@ -162,14 +163,14 @@ function readSlots_() {
   });
 }
 
-/** Free slots held by reservations that never uploaded proof in time. Call under lock. */
+/** Free slots held by reservations that never uploaded proof in time and delete their rows. Call under lock. */
 function sweepExpired_() {
   var now = Date.now();
-  readOrders_().forEach(function (o) {
-    if (o.Status === 'PENDING' && Date.parse(o.ExpiresAt) < now) {
-      setSlots_(o.slotList, 'AVAILABLE', '');
-      setOrder_(o, { Status: 'EXPIRED' });
-    }
+  readOrders_().filter(function (o) {
+    return o.Status === 'PENDING' && Date.parse(o.ExpiresAt) < now;
+  }).sort(function (a, b) { return b.row - a.row; }).forEach(function (o) { // bottom-up so row numbers stay valid
+    setSlots_(o.slotList, 'AVAILABLE', '');
+    ordersSheet_().deleteRow(o.row);
   });
 }
 
@@ -262,8 +263,7 @@ function reserve_(p) {
 function proof_(p) {
   sweepExpired_();
   var o = findOrder_(p.orderId);
-  if (!o) throw new Error('Order not found.');
-  if (o.Status === 'EXPIRED') throw new Error('This reservation expired. Please pick your numbers again.');
+  if (!o) throw new Error('This reservation expired or was cancelled. Please pick your numbers again.');
   if (o.Status !== 'PENDING' && o.Status !== 'SUBMITTED') throw new Error('This order is already ' + o.Status + '.');
 
   var mime = String(p.mime || '');
@@ -314,27 +314,23 @@ function approve_(p) {
   var o = findOrder_(p.orderId);
   if (!o) throw new Error('Order not found.');
   if (o.Status === 'PAID') return { ok: true };
-  if (['PENDING', 'SUBMITTED', 'EXPIRED'].indexOf(o.Status) < 0) throw new Error('Cannot approve an order that is ' + o.Status + '.');
-  if (o.Status === 'EXPIRED') { // late payment: only OK if nobody else took the numbers
-    var slots = readSlots_();
-    var gone = o.slotList.filter(function (n) { return slots[n - 1].status !== 'AVAILABLE'; });
-    if (gone.length) throw new Error('Slots #' + gone.join(', #') + ' were taken by someone else after expiry.');
-  }
+  if (['PENDING', 'SUBMITTED'].indexOf(o.Status) < 0) throw new Error('Cannot approve an order that is ' + o.Status + '.');
   setSlots_(o.slotList, 'PAID', o.OrderId);
   setOrder_(o, { Status: 'PAID', PaidAt: new Date().toISOString() });
   return { ok: true };
 }
 
-function reject_(p) { return freeOrder_(p.orderId, 'REJECTED', ['PENDING', 'SUBMITTED']); }
-function release_(p) { return freeOrder_(p.orderId, 'RELEASED', ['PAID']); }
+function reject_(p) { return freeOrder_(p.orderId, ['PENDING', 'SUBMITTED']); }
+function release_(p) { return freeOrder_(p.orderId, ['PAID']); }
 
-function freeOrder_(id, newStatus, allowed) {
+/** Free the order's slots and delete its row, so rejected/released entries leave no trace in the sheet. */
+function freeOrder_(id, allowed) {
   var o = findOrder_(id);
   if (!o) throw new Error('Order not found.');
   if (allowed.indexOf(o.Status) < 0) throw new Error('Cannot do that to an order that is ' + o.Status + '.');
   if (SpreadsheetApp.getActiveSpreadsheet().getSheetByName('FinalEntries')) throw new Error('Entries are frozen.');
   setSlots_(o.slotList, 'AVAILABLE', '');
-  setOrder_(o, { Status: newStatus });
+  ordersSheet_().deleteRow(o.row);
   return { ok: true };
 }
 
