@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Got Cha Dink Club Raffle</title>
 <meta name="theme-color" content="#0f1b33">
+<meta name="color-scheme" content="light">
 <link rel="icon" type="image/png" href="logo-192.png">
 <link rel="apple-touch-icon" href="logo-192.png">
 <meta property="og:title" content="Got Cha Dink Club Raffle">
@@ -133,9 +134,17 @@
   }
   function savedOrderId() { try { return new URLSearchParams(location.search).get('order') || localStorage.getItem('raffle-order'); } catch (e) { return null; } }
 
+  var boardRetry = null;
   async function loadBoard() {
     var r = await API.call('board');
-    if (!r.ok) { $('title').textContent = 'Could not load the raffle'; return; }
+    if (!r.ok) {
+      // A failed refresh keeps the board already on screen; only a failed first load shows a message, and it retries.
+      if (!board) {
+        $('title').textContent = 'Loading the raffle… (slow connection, retrying)';
+        if (!boardRetry) boardRetry = setTimeout(function () { boardRetry = null; loadBoard(); }, 4000);
+      }
+      return;
+    }
     board = r; render();
   }
 
