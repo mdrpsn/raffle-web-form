@@ -153,7 +153,6 @@
   $('goDetails').onclick = function () {
     selected.sort(function (a, b) { return a - b; });
     $('detailsSummary').textContent = 'Slots #' + selected.join(', #') + ' — total ' + peso(selected.length * board.raffle.price);
-    try { var d = JSON.parse(localStorage.getItem('raffle-me') || '{}'); $('name').value = d.name || ''; $('mobile').value = d.mobile || ''; $('fb').value = d.fb || ''; } catch (e) {}
     $('detailsErr').textContent = ''; show('stepDetails'); $('sticky').classList.add('hide');
   };
   $('backPick').onclick = function () { show('stepPick'); updateSticky(); };
@@ -161,15 +160,14 @@
   $('detailsForm').onsubmit = async function (e) {
     e.preventDefault();
     var btn = $('reserveBtn'); btn.disabled = true; $('detailsErr').textContent = '';
-    var me = { name: $('name').value, mobile: $('mobile').value, fb: $('fb').value };
-    var r = await API.call('reserve', { name: me.name, mobile: me.mobile, facebook: me.fb, slots: selected });
+    var r = await API.call('reserve', { name: $('name').value, mobile: $('mobile').value, facebook: $('fb').value, slots: selected });
     btn.disabled = false;
     if (!r.ok) {
       $('detailsErr').textContent = r.error;
       if (r.taken) { await loadBoard(); }
       return;
     }
-    try { localStorage.setItem('raffle-me', JSON.stringify(me)); } catch (e2) {}
+    $('detailsForm').reset();
     saveOrderId(r.orderId); selected = [];
     showPay({ orderId: r.orderId, slots: r.slots, amount: r.amount, expiresAt: r.expiresAt, paymentInstructions: r.paymentInstructions });
   };

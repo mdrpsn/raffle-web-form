@@ -12,6 +12,7 @@
 <body>
 <div class="wrap">
   <div class="brandbar"><img src="logo-192.png" alt="Got Cha Dink Club logo"><div><div class="club">Got Cha Dink Club</div><h1>Raffle admin</h1></div></div>
+  <div id="notice" class="notice hide" role="status" aria-live="polite"></div>
   <div id="login" class="card">
     <label for="pin">Admin PIN</label>
     <input id="pin" type="password" inputmode="numeric" autocomplete="current-password">
@@ -50,6 +51,14 @@
 
   function peso(n) { return '₱' + Number(n).toLocaleString('en-PH'); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  var noticeTimer;
+  // Status banner for slow actions (Apps Script takes several seconds); 'busy' stays until replaced, others hide after 8s.
+  function notify(text, kind) {
+    var n = $('notice'); clearTimeout(noticeTimer);
+    n.textContent = text; n.className = 'notice ' + kind;
+    if (kind !== 'busy') noticeTimer = setTimeout(function () { n.className = 'notice hide'; }, 8000);
+  }
 
   async function act(action, extra) {
     return API.call(action, Object.assign({ pin: pin }, extra || {}));
@@ -101,8 +110,12 @@
     var o = data.orders.filter(function (x) { return x.orderId === b.dataset.id; })[0], a = b.dataset.a;
     if (a === 'copy') { try { await navigator.clipboard.writeText(confirmationText(o)); b.textContent = 'Copied ✓'; } catch (err) { prompt('Copy this:', confirmationText(o)); } return; }
     if ((a === 'reject' || a === 'release') && !confirm(a === 'reject' ? 'Reject this payment and free the numbers?' : 'Release these PAID slots back to the pool?')) return;
+    var msg = { approve: ['Approving…', 'Approved ✓ — slots secured'], reject: ['Rejecting…', 'Rejected ✓ — order deleted, slots freed'],
+      release: ['Releasing…', 'Released ✓ — order deleted, slots freed'] }[a];
+    document.querySelectorAll('#orders button').forEach(function (x) { x.disabled = true; });
+    notify(msg[0], 'busy');
     var r = await act(a, { orderId: o.orderId });
-    if (!r.ok) alert(r.error);
+    notify(r.ok ? msg[1] : r.error, r.ok ? 'ok' : 'bad');
     await load();
   });
 
@@ -112,10 +125,14 @@
   $('pin').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('loginBtn').click(); });
   $('freezeBtn').onclick = async function () {
     if (!confirm('This closes registration, rejects unpaid holds, and locks the final entry list. Continue?')) return;
-    var r = await act('freeze'); $('drawErr').textContent = r.ok ? '' : r.error; await load();
+    $('freezeBtn').disabled = true; notify('Freezing entries…', 'busy');
+    var r = await act('freeze'); $('drawErr').textContent = r.ok ? '' : r.error;
+    notify(r.ok ? 'Entries frozen ✓ — ' + r.entries + ' paid entries locked' : r.error, r.ok ? 'ok' : 'bad'); await load();
   };
   $('drawBtn').onclick = async function () {
-    var r = await act('draw'); $('drawErr').textContent = r.ok ? '' : r.error; await load();
+    $('drawBtn').disabled = true; notify('Drawing…', 'busy');
+    var r = await act('draw'); $('drawErr').textContent = r.ok ? '' : r.error;
+    notify(r.ok ? 'Drawn ✓ — ' + r.prize + ': #' + r.slot + ' ' + r.name : r.error, r.ok ? 'ok' : 'bad'); await load();
   };
   if (pin) load();
 })();

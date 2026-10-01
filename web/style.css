@@ -47,6 +47,8 @@ button.btn:disabled{opacity:.5;cursor:default}
 .err{color:var(--err);font-weight:600;margin:.6rem 0}
 .pay{white-space:pre-wrap;background:var(--bg);border:1px dashed var(--brand);border-radius:10px;padding:10px;margin:.5rem 0}
 .amount{font-size:1.8rem;font-weight:800;color:var(--accent)}
+.notice{position:sticky;top:8px;z-index:5;margin:8px 0;padding:10px 14px;border-radius:10px;font-weight:700;background:var(--card);color:var(--ink);border:2px solid var(--line);box-shadow:0 4px 14px rgba(15,27,51,.2)}
+.notice.busy{border-color:var(--yellow)}.notice.ok{border-color:#2e9d5b}.notice.bad{border-color:var(--err);color:var(--err)}
 .qrbox{text-align:center;margin:.6rem 0}
 .qr{display:block;width:100%;max-width:260px;height:auto;margin:0 auto .4rem;border-radius:12px;border:1px solid var(--line)}
 .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.78rem;font-weight:700;border:1px solid}
