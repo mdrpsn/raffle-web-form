@@ -9,7 +9,7 @@
  */
 
 var ORDER_COLS = ['OrderId', 'CreatedAt', 'Name', 'Mobile', 'Facebook', 'Slots', 'Amount',
-  'Status', 'ExpiresAt', 'ProofUrl', 'ProofAt', 'PaidAt', 'Note'];
+  'Status', 'ExpiresAt', 'ProofUrl', 'ProofAt', 'PaidAt', 'Note', 'Token'];
 var OC = {}; ORDER_COLS.forEach(function (c, i) { OC[c] = i; });
 
 var DEFAULTS = [
@@ -73,7 +73,7 @@ function doPost(e) {
 }
 
 // Looked up at call time (not load time) so a half-pasted file still lets setup() run.
-function publicActions_() { return { board: board_, order: orderStatus_, reserve: reserve_, proof: proof_ }; }
+function publicActions_() { return { board: board_, order: orderStatus_, reserve: reserve_, resume: resume_, proof: proof_ }; }
 function adminActions_() { return { adminList: adminList_, approve: approve_, reject: reject_, release: release_, freeze: freeze_, draw: draw_ }; }
 
 function run_(action, p) {
@@ -217,9 +217,32 @@ function board_() {
   };
 }
 
+function findByToken_(token) {
+  var list = readOrders_();
+  for (var i = 0; i < list.length; i++) if (String(list[i].Token) === token) return list[i];
+  return null;
+}
+
+function orderPayload_(o, cfg) {
+  return { ok: true, orderId: o.OrderId, slots: o.slotList, amount: Number(o.Amount), expiresAt: o.ExpiresAt, status: o.Status,
+    paymentInstructions: cfg.paymentInstructions };
+}
+
+/** The browser sends a random token with each reserve. If its response is lost, the page asks for the order by token. */
+function resume_(p) {
+  sweepExpired_();
+  var token = clean_(p.token, 40);
+  var o = token && findByToken_(token);
+  if (!o) return { ok: false, notFound: true, error: 'No reservation found.' };
+  return orderPayload_(o, getConfig_());
+}
+
 function reserve_(p) {
   sweepExpired_();
   var cfg = getConfig_();
+  var token = clean_(p.token, 40);
+  var again = token && findByToken_(token); // a retry of a request that already went through
+  if (again) return orderPayload_(again, cfg);
   if (cfg.status !== 'OPEN') throw new Error('Registration is closed.');
 
   var name = clean_(p.name, 60), fb = clean_(p.facebook, 80), mobile = normMobile_(p.mobile);
@@ -253,8 +276,9 @@ function reserve_(p) {
   var sh = ordersSheet_(), row = sh.getLastRow() + 1;
   // Set text format on this row's Name/Mobile/Facebook before writing, or Sheets turns 0917... into the number 917...
   sh.getRange(row, OC.Name + 1, 1, 3).setNumberFormat('@');
+  if (sh.getRange(1, ORDER_COLS.length).getValue() !== 'Token') sh.getRange(1, ORDER_COLS.length).setValue('Token').setFontWeight('bold');
   sh.getRange(row, 1, 1, ORDER_COLS.length).setValues([[id, new Date().toISOString(), name, mobile, fb, uniq.join(','), amount,
-    'PENDING', expires, '', '', '', '']]);
+    'PENDING', expires, '', '', '', '', token]]);
   setSlots_(uniq, 'PENDING', id);
   return { ok: true, orderId: id, slots: uniq, amount: amount, expiresAt: expires,
     paymentInstructions: cfg.paymentInstructions };

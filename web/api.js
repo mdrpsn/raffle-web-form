@@ -4,16 +4,18 @@
   var DEMO = !CFG.API_URL;
 
   async function remote(action, payload) {
-    var res;
-    if (action === 'board' || action === 'order') {
-      var q = new URLSearchParams({ action: action, orderId: (payload || {}).orderId || '' });
-      res = await fetch(CFG.API_URL + '?' + q);
-    } else {
-      // text/plain avoids a CORS preflight, which Apps Script can't answer.
-      res = await fetch(CFG.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action: action }, payload)) });
-    }
-    return res.json();
+    var res, ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, 30000);
+    try {
+      if (action === 'board' || action === 'order') {
+        var q = new URLSearchParams({ action: action, orderId: (payload || {}).orderId || '' });
+        res = await fetch(CFG.API_URL + '?' + q, { signal: ctl.signal });
+      } else {
+        // text/plain avoids a CORS preflight, which Apps Script can't answer.
+        res = await fetch(CFG.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, signal: ctl.signal,
+          body: JSON.stringify(Object.assign({ action: action }, payload)) });
+      }
+      return await res.json();
+    } finally { clearTimeout(timer); }
   }
 
   // ---------------- demo backend ----------------
@@ -68,6 +70,7 @@
       var o = s.orders[s.orders.length - 1];
       return { ok: true, orderId: id, slots: want, amount: o.amount, expiresAt: o.expiresAt, paymentInstructions: c.pay };
     },
+    resume: function () { return { ok: false, notFound: true, error: 'No reservation found.' }; }, // demo calls never lose a response
     proof: function (s, p) {
       var o = find(s, p.orderId);
       if (o.status === 'EXPIRED') throw new Error('This reservation expired. Please pick your numbers again.');
@@ -131,7 +134,7 @@
       try { out = demo[action](s, payload); } catch (e) { out = { ok: false, error: e.message }; }
       save(s); return out;
     } catch (e) {
-      return { ok: false, error: 'Network problem. Please try again.' };
+      return { ok: false, network: true, error: 'Network problem. Please try again.' };
     }
   }
   window.RaffleAPI = { call: call, demo: DEMO };

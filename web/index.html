@@ -103,6 +103,19 @@
     clearInterval(poll); poll = step === 'stepPick' ? setInterval(loadBoard, 20000) : null;
   }
   function saveOrderId(id) { try { id ? localStorage.setItem('raffle-order', id) : localStorage.removeItem('raffle-order'); } catch (e) {} }
+  // Each reserve carries a random token so a lost response can be recovered (see recover) instead of leaving a hold the customer can't reach.
+  function newToken() { var a = new Uint8Array(10); crypto.getRandomValues(a); return 'T' + Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+  function saveAttempt(t) { try { t ? localStorage.setItem('raffle-attempt', t) : localStorage.removeItem('raffle-attempt'); } catch (e) {} }
+  function savedAttempt() { try { return localStorage.getItem('raffle-attempt'); } catch (e) { return null; } }
+  async function recover(token) {
+    for (var i = 0; i < 3; i++) {
+      var r = await API.call('resume', { token: token });
+      if (r.ok) return r;
+      if (r.notFound) return { ok: false, error: 'Your reservation did not go through. Please try again.' };
+      await new Promise(function (done) { setTimeout(done, 2000); });
+    }
+    return { ok: false, network: true, error: 'Still no connection. Reload this page once you are online and we will find your reservation.' };
+  }
   function savedOrderId() { try { return new URLSearchParams(location.search).get('order') || localStorage.getItem('raffle-order'); } catch (e) { return null; } }
 
   async function loadBoard() {
@@ -160,16 +173,20 @@
   $('detailsForm').onsubmit = async function (e) {
     e.preventDefault();
     var btn = $('reserveBtn'); btn.disabled = true; $('detailsErr').textContent = '';
-    var r = await API.call('reserve', { name: $('name').value, mobile: $('mobile').value, facebook: $('fb').value, slots: selected });
+    var token = newToken(); saveAttempt(token);
+    var r = await API.call('reserve', { name: $('name').value, mobile: $('mobile').value, facebook: $('fb').value, slots: selected, token: token });
+    if (r.network) { $('detailsErr').textContent = 'Connection problem — checking whether your reservation went through…'; r = await recover(token); }
     btn.disabled = false;
     if (!r.ok) {
+      if (!r.network) saveAttempt(null); // keep the token if we are still offline; the next page load looks for the reservation
       $('detailsErr').textContent = r.error;
       if (r.taken) { await loadBoard(); }
       return;
     }
-    $('detailsForm').reset();
+    saveAttempt(null); $('detailsForm').reset();
     saveOrderId(r.orderId); selected = [];
-    showPay({ orderId: r.orderId, slots: r.slots, amount: r.amount, expiresAt: r.expiresAt, paymentInstructions: r.paymentInstructions });
+    if (r.status && r.status !== 'PENDING') await showStatus(r.orderId);
+    else showPay({ orderId: r.orderId, slots: r.slots, amount: r.amount, expiresAt: r.expiresAt, paymentInstructions: r.paymentInstructions });
   };
 
   function showPay(o) {
@@ -215,12 +232,16 @@
 
   async function showStatus(id) {
     var r = await API.call('order', { orderId: id });
+    if (r.network) { // keep the saved order; only a definite "not found" forgets it
+      show('stepDone'); $('doneTitle').textContent = 'Connection problem';
+      $('doneBody').innerHTML = '<p class="muted">We could not check your order. Your reservation is safe — refresh this page to try again.</p>'; return;
+    }
     if (!r.ok) { saveOrderId(null); show('stepPick'); await loadBoard(); return; }
     var o = r.order; show('stepDone');
     var T = {
       PAID: ['✅ Payment confirmed!', 'Keep this confirmation until the live draw.'],
       SUBMITTED: ['⏳ Payment received — waiting for verification', 'We will confirm your slots shortly. Refresh this page to check.'],
-      PENDING: ['Awaiting your payment', 'Your numbers are on hold. Upload your screenshot before time runs out.'],
+      PENDING: ['Awaiting your payment', 'Your numbers are on hold. Tap below to see how to pay, then upload your screenshot before time runs out.'],
       EXPIRED: ['Reservation expired', 'The hold ran out before proof was uploaded. Please pick your numbers again.'],
       REJECTED: ['Payment not verified', 'Please message the club for help.'],
       RELEASED: ['Slots released', 'These slots were released. Please message the club.'],
@@ -228,7 +249,7 @@
     $('doneTitle').textContent = T[0];
     $('doneBody').innerHTML = '<p class="muted">' + T[1] + '</p><p><b>' + esc(o.raffleName) + '</b><br>' + esc(o.name) +
       '<br>Slots: #' + o.slots.join(', #') + '<br>Amount: ' + peso(o.amount) + '<br>Status: <span class="pill ' + o.status + '">' + o.status + '</span>' +
-      '<br>Order ID: ' + esc(o.orderId) + '</p>' + (o.status === 'PENDING' ? '<button class="btn" id="resumePay">Upload payment proof</button>' : '');
+      '<br>Order ID: ' + esc(o.orderId) + '</p>' + (o.status === 'PENDING' ? '<button class="btn" id="resumePay">Proceed to payment</button>' : '');
     var rp = $('resumePay'); if (rp) rp.onclick = function () { showPay({ orderId: o.orderId, slots: o.slots, amount: o.amount, expiresAt: o.expiresAt, paymentInstructions: o.paymentInstructions }); };
     if (o.status === 'EXPIRED' || o.status === 'REJECTED' || o.status === 'RELEASED') saveOrderId(null);
   }
@@ -237,7 +258,12 @@
   (async function init() {
     if (API.demo) $('demoBanner').classList.remove('hide');
     await loadBoard();
-    var id = savedOrderId();
+    var id = savedOrderId(), token = savedAttempt();
+    if (!id && token) { // a reserve whose response never arrived: find it on the server
+      var r = await recover(token);
+      if (r.ok) { saveOrderId(r.orderId); id = r.orderId; }
+      if (!r.network) saveAttempt(null);
+    }
     if (id) await showStatus(id);
     else show('stepPick');
   })();
