@@ -97,6 +97,10 @@ function adminActions_() { return { adminList: adminList_, approve: approve_, re
 var READ_ONLY = { board: 1, order: 1, resume: 1, adminList: 1 }; // any other action changes the board, so its cached copy is dropped
 
 function run_(action, p) {
+  var pub = publicActions_(), adm = adminActions_();
+  // Check the PIN BEFORE taking the lock: a wrong guess must never hold up customers, and the slow-down
+  // for guessing happens outside the lock too.
+  if (!pub[action] && adm[action] && !pinOk_(p.pin)) { Utilities.sleep(700); return json_({ ok: false, error: 'Wrong PIN' }); }
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(20000);
@@ -104,16 +108,12 @@ function run_(action, p) {
     return json_({ ok: false, error: 'Server busy, please try again.' });
   }
   try {
-    var pub = publicActions_(), adm = adminActions_();
     if (pub[action]) {
       var out = pub[action](p);
       if (action === 'board') CacheService.getScriptCache().put('board', JSON.stringify(out), 20);
       return json_(out);
     }
-    if (adm[action]) {
-      if (!pinOk_(p.pin)) { Utilities.sleep(700); return json_({ ok: false, error: 'Wrong PIN' }); }
-      return json_(adm[action](p));
-    }
+    if (adm[action]) return json_(adm[action](p));
     return json_({ ok: false, error: 'Unknown action' });
   } catch (err) {
     return json_({ ok: false, error: String(err.message || err) });

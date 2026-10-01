@@ -1,5 +1,7 @@
-// End-to-end test of the front end in demo mode. Usage: node e2e.js [baseUrl]
-// Needs `playwright` installed and the web/ folder served (e.g. python3 -m http.server 8765 --directory ../web).
+// End-to-end test of the front end in offline-preview mode. Usage: node e2e.js [baseUrl]
+// Needs `playwright` installed and the web/ folder served (e.g. python3 -m http.server 8765 --directory web).
+// Safe to run against the shipped web/ folder: config.js is replaced in the browser with an empty API_URL, and any
+// request to the live Apps Script backend fails the test, so this can never create reservations on a real raffle.
 const { chromium } = require('playwright');
 const BASE = process.argv[2] || 'http://localhost:8765';
 const assert = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1; } else console.log('ok  ', m); };
@@ -9,6 +11,9 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium' });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 800 } });  // phone size
+  await ctx.route('**/config.js', r => r.fulfill({ contentType: 'application/javascript',
+    body: 'window.RAFFLE_CONFIG = { API_URL: "", CLUB_NAME: "Got Cha Dink Club" };' }));
+  await ctx.route(/script\.google(usercontent)?\.com/, r => { console.error('FAIL: test tried to reach the live backend'); process.exitCode = 1; r.abort(); });
   const page = await ctx.newPage();
   page.on('pageerror', e => { console.error('PAGE ERROR', e.message); process.exitCode = 1; });
   page.on('dialog', d => d.accept());
@@ -16,6 +21,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   // --- customer A buys 3 slots
   await page.goto(BASE + '/index.html');
   await page.waitForSelector('.slot');
+  assert(await page.evaluate(() => window.RaffleAPI.offline === true), 'running against the offline preview, not the live backend');
   assert(await page.locator('.slot').count() === 100, '100 slots rendered');
   for (const n of [18, 36, 77]) await page.click(`.slot[data-n="${n}"]`);
   assert((await page.textContent('#selCount')).includes('₱450'), 'total shows ₱450 for 3 slots');

@@ -136,7 +136,8 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
 ## Limits worth knowing
 - Payment checking is still **manual by design** — you compare the screenshot with your wallet.
 - The admin PIN is a simple shared secret, fine for one organiser; don't reuse a real password.
-  The PIN is sent in the request body (not the URL).
+  The PIN is sent in the request body (not the URL). Wrong guesses are slowed down but not locked out, so use a
+  long PIN (the generated 6 digits are the minimum).
 - Apps Script adds about 1–2 seconds per request and is limited to roughly 30 concurrent
   executions; a 100-slot raffle is nowhere near that.
 - The draw uses `Math.random()` on the frozen list, which is fine for a livestreamed club
@@ -146,13 +147,18 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
 
 ## Tests
 The backend was tested by hand on the live site (reserve, upload, approve, reject, freeze, draw, lost-response
-recovery). `tests/e2e.js` was written for the offline preview and has not been re-run since the latest UI additions.
-It drives the real pages in Chromium (offline preview, with `API_URL` empty): reserve → race for the
-same slot → upload proof → approve → public board → reject → freeze → three draws with no repeat winner.
-`Code.gs` itself can only run inside Google, so the same rules are mirrored in the offline backend
-in `api.js` and tested there; do one live dry run (reserve, upload, approve) after deploying.
+recovery). `tests/e2e.js` drives the real pages in Chromium (offline preview): reserve → race for the same slot → upload
+proof → approve → public board → reject → freeze → three draws with no repeat winner. It was re-run against the current
+front end (22 checks pass). It is safe to run against the shipped `web/` folder: it swaps in an empty `API_URL` in the
+browser and fails if anything tries to reach the live backend, so it can never create reservations on a real raffle.
+
+`Code.gs` itself can only run inside Google, so the same rules are mirrored in the offline backend in `api.js` and
+tested there. `tests/code-gs-lock.js` runs the real `Code.gs` with stubbed Apps Script services to check one thing the
+mirror can't: a wrong admin PIN is refused *before* the script lock is taken, so guessing can't stall customers. Do one
+live dry run (reserve, upload, approve) after deploying.
 
 ```bash
 python3 -m http.server 8765 --directory web &
 npm i playwright && node tests/e2e.js     # set CHROME=/path/to/chrome if needed
+node tests/code-gs-lock.js
 ```
