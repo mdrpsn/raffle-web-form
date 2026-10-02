@@ -1,22 +1,65 @@
 # Raffle slot form
 
-A mobile-first web form for a numbered paddle raffle (default: 100 slots at ₱150).
-Customers pick numbers on a live 1–100 board, enter their details, pay by
-GCash/Maya/GoTyme and upload a screenshot. You approve payments from an admin page;
-approved numbers turn **Secured** on the public board. Registration closes, paid
-entries are frozen, and the draw runs from the frozen list.
+**A live, mobile-first raffle app for Facebook sellers and clubs.** Customers pick numbers on a real-time
+1–100 board, pay by GCash (QR or number), and upload a payment screenshot. The organiser approves
+payments from a PIN-protected admin page, and approved numbers turn **Secured** on the public board.
+No server, no monthly bill: a static site, Google Apps Script and a Google Sheet.
+
+**Live:** https://raffleslotform.pages.dev — built for the Got Cha Dink Club paddle raffle.
+
+| Phone | Board | Reserve | Admin |
+|---|---|---|---|
+| <img src="docs/screenshots/mobile-board.png" width="170" alt="Mobile board"> | <img src="docs/screenshots/board.png" width="230" alt="Raffle board"> | <img src="docs/screenshots/details-form.png" width="230" alt="Reserve form"> | <img src="docs/screenshots/admin.png" width="230" alt="Admin review screen"> |
+
+*Screenshots use made-up customers; the live site shows real people only as "Maria S."*
 
 ```
 AVAILABLE → PENDING (reserved, hold expires) → PAID (secured, after you approve)
 ```
 
-**Cost: ₱0.** Front end on a free static host, backend on Google Sheets + Apps Script,
-screenshots in your Google Drive.
+## What it does
+- **Live number board** that refreshes by itself, with Available / Pending / Secured states and a progress bar.
+- **Reserve and pay:** pick up to 20 numbers, get a timed hold, pay by GCash QR or number, upload a screenshot
+  (shrunk in the browser before upload).
+- **Admin review:** approve, reject or release orders, view the proof, copy a "Payment confirmed" message to paste
+  into Messenger. Every action shows its progress and result.
+- **Raffle rules built in:** a "How to join & raffle mechanics" card and an agreement line on the form.
+- **Draw tools:** freeze the paid entries, then draw prizes (the organiser can also run the draw elsewhere).
+- **Privacy by design:** the public board shows "Maria S.", never mobile numbers or screenshots, and rejected or
+  expired orders are deleted from the Sheet.
+
+## How it works
+```
+Browser (static site on Cloudflare Pages)
+   │  fetch (JSON)
+   ▼
+Google Apps Script web app ── script lock ──► Google Sheet  (Config · Orders · Slots)
+   │                                           Google Drive  (private payment screenshots)
+   └─ 20-second board cache + 5-minute keep-warm timer
+```
+
+## Engineering notes
+Problems found in live testing, and how they were fixed:
+- **Sheets quietly changed data.** An order ID made only of digits was stored as a number and never matched on
+  lookup, and mobile numbers lost their leading 0. IDs now start with a letter, and name/mobile cells are written as text.
+- **Lost responses on mobile data.** The server could finish a reservation while the browser never got the reply.
+  Each attempt now carries a random token, so a retry returns the same order instead of a duplicate. The page recovers
+  by itself, and after a refresh it offers a **Proceed to payment** button with a countdown.
+- **Double booking.** Every write takes a script lock and rechecks the slot, so two people choosing #27 at once get
+  one winner and one "just taken".
+- **Slow cold starts.** Apps Script can take many seconds to wake. The board is cached for 20 seconds (cleared on any
+  write), a timer pings the app every 5 minutes, and the browser has a 30-second timeout with a quiet retry.
+- **Admin feedback.** Writes take a few seconds, so the admin page shows "Rejecting… / Rejected ✓" instead of
+  appearing to do nothing.
+
+**Stack:** vanilla JavaScript, HTML and CSS · Google Apps Script · Google Sheets and Drive · Cloudflare Pages.
+**Cost: ₱0.**
 
 ```
 web/        index.html (customers)  admin.html (you)  api.js  config.js  style.css
 backend/    Code.gs  — paste into Apps Script
 tests/      e2e.js   — browser test of the whole flow (offline preview)
+docs/       screenshots used in this README
 ```
 
 ## Try it offline (optional preview, no setup)
@@ -74,7 +117,8 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
 3. Unpaid holds expire by themselves after `holdMinutes` (no timer to run).
 4. When sold out or on draw day: **Close & freeze final entries** (locks the paid list into
    a `FinalEntries` tab and rejects unpaid holds), then **Draw next prize** on the livestream.
-   A slot that wins is excluded from later prizes. Winners are recorded in the `Draws` tab
+   A slot that wins is excluded from later prizes (only that slot: a player with several slots can still win
+   again, so apply a one-prize-per-person rule yourself if you need one). Winners are recorded in the `Draws` tab
    and shown on the public board.
 5. Next raffle: copy the Sheet (File → Make a copy), re-run `setup` in the copy, deploy it as
    its own web app, and use a new `API_URL`. Keep each raffle's sheet as its record.
@@ -101,7 +145,9 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
 - The board polls every 20 s; a customer sees "just taken" at submit time, never a double booking.
 
 ## Tests
-`tests/e2e.js` drives the real pages in Chromium (offline preview, with `API_URL` empty): reserve → race for the
+The backend was tested by hand on the live site (reserve, upload, approve, reject, freeze, draw, lost-response
+recovery). `tests/e2e.js` was written for the offline preview and has not been re-run since the latest UI additions.
+It drives the real pages in Chromium (offline preview, with `API_URL` empty): reserve → race for the
 same slot → upload proof → approve → public board → reject → freeze → three draws with no repeat winner.
 `Code.gs` itself can only run inside Google, so the same rules are mirrored in the offline backend
 in `api.js` and tested there; do one live dry run (reserve, upload, approve) after deploying.

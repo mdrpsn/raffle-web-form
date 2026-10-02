@@ -1,2 +1,6 @@
 node_modules/
 *.png
+
+# keep README screenshots and the club logo
+!docs/screenshots/*.png
+!web/logo-192.png
