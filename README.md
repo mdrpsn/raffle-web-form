@@ -59,6 +59,7 @@ Problems found in live testing, and how they were fixed:
 web/        index.html (customers)  admin.html (you)  api.js  config.js  style.css
 backend/    Code.gs  — paste into Apps Script
 tests/      e2e.js   — browser test of the whole flow (offline preview)
+            code-gs-lock.js — checks Code.gs refuses a wrong PIN before taking the lock
 docs/       screenshots used in this README
 ```
 
@@ -145,8 +146,9 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
   makes it credible.
 - The board polls every 20 s; a customer sees "just taken" at submit time, never a double booking.
 
-## Found and fixed
-Found in a review of the code and config, then reproduced with a test. Neither was caught in live use.
+## Found in code review, and fixed
+Separate from the live-testing problems under **Engineering notes** above: these two were found by reading the code and
+config, then reproduced with a test. Neither was caught in live use.
 
 1. **The documented test command pointed at the live raffle.** `web/config.js` ships with the real backend URL, but
    the instructions for `tests/e2e.js` assumed an empty `API_URL`. Running the test as written would have created
@@ -157,16 +159,6 @@ Found in a review of the code and config, then reproduced with a test. Neither w
    sleeping 700 ms on a failure. Repeated wrong guesses could therefore keep every customer request waiting. Fixed: the
    PIN is checked before the lock is taken. `tests/code-gs-lock.js` runs the real `Code.gs` with stubbed Apps Script
    services; on the old code it showed `lock,sleep,unlock` for a wrong PIN, and on the fixed code the lock is never taken.
-
-### Google Sheets pitfalls the code already guards against
-These are written up in comments in `Code.gs`:
-- **Phone numbers lose their leading zero.** Sheets turns `0917…` into the number `917…`, so the Name/Mobile/Facebook
-  columns are set to plain text before each write.
-- **Order IDs that look like numbers.** An all-digit id (or one like `1234E5678`) is stored as a number and never
-  matches on lookup, so every id starts with a letter.
-- **A lost response created a duplicate order.** Each reservation carries a random token; if the reply never arrives,
-  the page asks for the order by token instead of reserving again.
-- **Deleting rows shifts the row numbers.** Expired holds are removed from the bottom up so the remaining row numbers stay valid.
 
 ## Security notes
 - **Data it touches:** each buyer's name, mobile number, Facebook name and payment screenshot. They live in your Google Sheet and a private Drive folder, so share both only with the organizers.
