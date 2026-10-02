@@ -145,6 +145,29 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
   makes it credible.
 - The board polls every 20 s; a customer sees "just taken" at submit time, never a double booking.
 
+## Found and fixed
+Found in a review of the code and config, then reproduced with a test. Neither was caught in live use.
+
+1. **The documented test command pointed at the live raffle.** `web/config.js` ships with the real backend URL, but
+   the instructions for `tests/e2e.js` assumed an empty `API_URL`. Running the test as written would have created
+   fake reservations ("Arlene Roma", 3 slots) on the real Sheet. Fixed: the test now swaps in an empty `API_URL` in the
+   browser, fails if anything requests the Apps Script backend, and first asserts it is running offline. Verified by
+   running it with the live URL still in `config.js`: all 22 checks passed.
+2. **A wrong admin PIN held the global lock.** `run_()` took the script lock first and only then checked the PIN,
+   sleeping 700 ms on a failure. Repeated wrong guesses could therefore keep every customer request waiting. Fixed: the
+   PIN is checked before the lock is taken. `tests/code-gs-lock.js` runs the real `Code.gs` with stubbed Apps Script
+   services; on the old code it showed `lock,sleep,unlock` for a wrong PIN, and on the fixed code the lock is never taken.
+
+### Google Sheets pitfalls the code already guards against
+These are written up in comments in `Code.gs`:
+- **Phone numbers lose their leading zero.** Sheets turns `0917…` into the number `917…`, so the Name/Mobile/Facebook
+  columns are set to plain text before each write.
+- **Order IDs that look like numbers.** An all-digit id (or one like `1234E5678`) is stored as a number and never
+  matches on lookup, so every id starts with a letter.
+- **A lost response created a duplicate order.** Each reservation carries a random token; if the reply never arrives,
+  the page asks for the order by token instead of reserving again.
+- **Deleting rows shifts the row numbers.** Expired holds are removed from the bottom up so the remaining row numbers stay valid.
+
 ## Security notes
 - **Data it touches:** each buyer's name, mobile number, Facebook name and payment screenshot. They live in your Google Sheet and a private Drive folder, so share both only with the organizers.
 - **What is public on purpose:** the customer page, the backend URL it calls, and the payment QR. Customers need all three. The public board shows only "Maria S.", and the e2e test checks that no mobile number appears on it.
