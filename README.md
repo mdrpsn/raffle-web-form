@@ -145,6 +145,14 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
   makes it credible.
 - The board polls every 20 s; a customer sees "just taken" at submit time, never a double booking.
 
+## Security notes
+- **Data it touches:** each buyer's name, mobile number, Facebook name and payment screenshot. They live in your Google Sheet and a private Drive folder, so share both only with the organizers.
+- **What is public on purpose:** the customer page, the backend URL it calls, and the payment QR. Customers need all three. The public board shows only "Maria S.", and the e2e test checks that no mobile number appears on it.
+- **Who can call the backend:** anyone with the URL can use the public actions (view the board, reserve, upload proof). Holds expire by themselves and one mobile number can have at most 3 open reservations, but someone using many different numbers could tie up slots until their holds expire.
+- **Admin access:** one shared PIN. Wrong guesses are refused before the script lock is taken, so guessing can't stall customers, but there is no lockout. Use a long PIN and change it for each raffle.
+- **Payments:** verified by a person comparing the screenshot with the wallet. Nothing is auto-approved.
+- **Before each raffle:** change the PIN, check the Sheet and Drive folder sharing, and make a copy of the Sheet when it ends as the record.
+
 ## Tests
 The backend was tested by hand on the live site (reserve, upload, approve, reject, freeze, draw, lost-response
 recovery). `tests/e2e.js` drives the real pages in Chromium (offline preview): reserve → race for the same slot → upload
