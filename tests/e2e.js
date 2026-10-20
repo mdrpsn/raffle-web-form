@@ -75,6 +75,27 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   assert((await page.textContent('.slot[data-n="18"]')).includes('Arlene R.'), 'public label is first name + last initial');
   assert(!(await page.content()).includes('0917'), 'no mobile number on public page');
 
+  // --- customer paid but cannot upload the screenshot: "I've paid" keeps the number held, proof can follow later
+  const page3 = await ctx.newPage(); page3.on('dialog', d => d.accept());
+  await page3.goto(BASE + '/index.html'); await page3.evaluate(() => localStorage.removeItem('raffle-order'));
+  await page3.reload(); await page3.waitForSelector('.slot');
+  await page3.click('.slot[data-n="90"]'); await page3.click('#goDetails');
+  await page3.fill('#name', 'Carla Dizon'); await page3.fill('#mobile', '0918 765 4321'); await page3.fill('#fb', 'Carla D');
+  await page3.click('#reserveBtn'); await page3.waitForSelector('#stepPay:not(.hide)');
+  const orderC = await page3.textContent('#payOrderId');
+  await page3.click('#claimPaid'); await page3.waitForSelector('#stepDone:not(.hide)');
+  assert((await page3.textContent('#doneTitle')).includes('Payment noted'), 'claim: customer sees "payment noted"');
+  await admin.click('#refresh'); await admin.waitForTimeout(100);
+  assert((await admin.textContent('#orders')).includes('Carla Dizon') && (await admin.textContent('#orders')).includes('CLAIMED'), 'claim: admin sees CLAIMED order with no proof');
+  await page3.click('#resumePay'); await page3.waitForSelector('#stepPay:not(.hide)');
+  await page3.setInputFiles('#proof', { name: 'late.png', mimeType: 'image/png', buffer: PNG });
+  await page3.click('#sendProof'); await page3.waitForSelector('#stepDone:not(.hide)');
+  assert((await page3.textContent('#doneTitle')).includes('waiting for verification'), 'claim: late proof upload accepted');
+  await admin.click('#refresh'); await admin.waitForTimeout(100); await admin.click('[data-tab="review"]');
+  await admin.click(`button[data-a="approve"][data-id="${orderC}"]`); await admin.waitForTimeout(100);
+  await admin.click('[data-tab="all"]');
+  assert(await admin.locator(`button[data-a="copy"][data-id="${orderC}"]`).count() === 1, 'claim: order approved after late proof');
+
   // --- reject frees numbers; freeze; draw excludes previous winners
   await admin.click('[data-tab="review"]');
   await admin.click(`button[data-a="reject"]`); // Racer's pending order

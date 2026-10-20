@@ -15,6 +15,7 @@ No server, no monthly bill: a static site, Google Apps Script and a Google Sheet
 
 ```
 AVAILABLE → PENDING (reserved, hold expires) → PAID (secured, after you approve)
+                     ↘ CLAIMED ("I've paid", proof still to come, longer hold) ↗
 ```
 
 ## What it does
@@ -51,6 +52,12 @@ Problems found in live testing, and how they were fixed:
   write), a timer pings the app every 5 minutes, and the browser has a 30-second timeout with a quiet retry.
 - **Admin feedback.** Writes take a few seconds, so the admin page shows "Rejecting… / Rejected ✓" instead of
   appearing to do nothing.
+- **Paid, but the screenshot would not upload.** A customer paid by GCash, the proof upload failed, the 30-minute
+  hold ran out and the number went to someone else. Now the payment step has an "I've paid, but I can't upload the
+  screenshot now" button. It moves the order to `CLAIMED` and holds the numbers for `claimHoldMinutes` (default 24 h)
+  while the customer uploads later from the same page. It is not a permanent hold: with no proof by then the order
+  expires like any other, claimed orders still count toward the 3-open-orders-per-number limit, and the admin can approve
+  (after checking the wallet) or reject a claimed order at any time.
 
 **Stack:** vanilla JavaScript, HTML and CSS · Google Apps Script · Google Sheets and Drive · Cloudflare Pages.
 **Cost: ₱0.**
@@ -81,7 +88,7 @@ python3 -m http.server 8765 --directory web     # then open http://localhost:876
    (it needs the Sheet and Drive). This creates the `Config`, `Slots` and `Orders` tabs,
    a private Drive folder for screenshots, and an admin PIN. Open **Execution log** to
    read the PIN, or set your own in **Project Settings → Script properties → `ADMIN_PIN`**.
-4. Edit the **Config** tab: raffle name, prizes, price, total slots, hold minutes, and your
+4. Edit the **Config** tab: raffle name, prizes, price, total slots, hold minutes (and `claimHoldMinutes` for "I've paid" orders, default 1440), and your
    payment instructions. (Change `totalSlots` *before* the raffle opens; re-run `setup`
    on a fresh sheet if you change it later.)
 5. **Deploy → New deployment → Web app.** Execute as: **Me**. Who has access: **Anyone**.
@@ -114,7 +121,7 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
 2. Open the admin page. **Needs review** lists each reservation with the proof link
    (opens in your Google Drive). **Approve** secures the slots; **Copy confirmation**
    gives you the "Payment confirmed 🎟️" message to paste into Messenger.
-3. Unpaid holds expire by themselves after `holdMinutes` (no timer to run).
+3. Unpaid holds expire by themselves after `holdMinutes` (no timer to run). A customer who taps "I've paid" keeps their numbers for `claimHoldMinutes`; those orders show as **CLAIMED** with "No proof yet".
 4. When sold out or on draw day: **Close & freeze final entries** (locks the paid list into
    a `FinalEntries` tab and rejects unpaid holds), then **Draw next prize** on the livestream.
    A slot that wins is excluded from later prizes (only that slot: a player with several slots can still win
@@ -126,7 +133,7 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
 ## What the system protects against
 - **Double booking:** every write takes a script lock and rechecks the slot, so two people
   grabbing #27 at once get one winner and one "just taken" message.
-- **Hoarding:** unpaid holds expire; one mobile number can have at most 3 open reservations.
+- **Hoarding:** unpaid holds expire; one mobile number can have at most 3 open reservations (claimed ones count).
 - **Clean sheet:** expired, rejected and released orders free their slots and their row is deleted from the
   `Orders` tab (the payment screenshot stays in Drive). An expired hold can't be approved late; the customer picks again.
 - **Privacy:** the public board shows only "Maria S."; mobile numbers and screenshots are admin-only,
@@ -146,13 +153,19 @@ Replace that image with your own QR (or delete it to hide the QR) and redeploy.
 
 ## Tests
 The backend was tested by hand on the live site (reserve, upload, approve, reject, freeze, draw, lost-response
-recovery). `tests/e2e.js` was written for the offline preview and has not been re-run since the latest UI additions.
+recovery). `tests/backend.test.js` runs `backend/Code.gs` itself in Node against an in-memory fake of the Sheets, Drive,
+lock and cache services, with a controllable clock. It covers hold expiry, the "I've paid" claim, late proof upload,
+the claim window ending, the 3-open-orders limit and admin approval of a claimed order. `tests/e2e.js` drives the pages
+in the offline preview; it was last run after the "I've paid" change.
 It drives the real pages in Chromium (offline preview, with `API_URL` empty): reserve → race for the
 same slot → upload proof → approve → public board → reject → freeze → three draws with no repeat winner.
-`Code.gs` itself can only run inside Google, so the same rules are mirrored in the offline backend
-in `api.js` and tested there; do one live dry run (reserve, upload, approve) after deploying.
+The fake services are not Google, so do one live dry run (reserve, "I've paid", upload, approve) after deploying.
+**Careful:** the committed `web/config.js` points at the live backend. Run `tests/e2e.js` against a copy of `web/`
+with `API_URL` empty, never against the live URL.
 
 ```bash
-python3 -m http.server 8765 --directory web &
+node tests/backend.test.js                # no dependencies
+# browser test: serve a COPY of web/ with API_URL set to "" in its config.js, then
+python3 -m http.server 8765 --directory <that copy> &
 npm i playwright && node tests/e2e.js     # set CHROME=/path/to/chrome if needed
 ```

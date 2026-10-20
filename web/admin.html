@@ -86,13 +86,13 @@
       ['Collected', peso(s.collected)], ['Potential left', peso(s.potential)]].map(function (x) {
       return '<div><span class="muted">' + x[0] + '</span><b>' + x[1] + '</b></div>'; }).join('');
     document.querySelectorAll('[data-tab]').forEach(function (b) { b.classList.toggle('ghost', b.dataset.tab !== tab); });
-    var list = data.orders.filter(function (o) { return tab === 'all' || o.status === 'SUBMITTED' || o.status === 'PENDING'; });
+    var list = data.orders.filter(function (o) { return tab === 'all' || o.status === 'SUBMITTED' || o.status === 'CLAIMED' || o.status === 'PENDING'; });
     $('orders').innerHTML = list.length ? list.map(function (o) {
       var proof = o.proofUrl ? (o.proofUrl.indexOf('data:') === 0 ? '<a href="' + esc(o.proofUrl) + '" target="_blank" rel="noopener">View proof</a>'
         : '<a href="' + esc(o.proofUrl) + '" target="_blank" rel="noopener">View proof (Drive)</a>') : '<span class="muted">No proof yet</span>';
       var btns = '';
-      if (['PENDING', 'SUBMITTED', 'EXPIRED'].indexOf(o.status) >= 0) btns += '<button class="btn small" data-a="approve" data-id="' + o.orderId + '">Approve</button>';
-      if (['PENDING', 'SUBMITTED'].indexOf(o.status) >= 0) btns += '<button class="btn small bad" data-a="reject" data-id="' + o.orderId + '">Reject</button>';
+      if (['PENDING', 'CLAIMED', 'SUBMITTED', 'EXPIRED'].indexOf(o.status) >= 0) btns += '<button class="btn small" data-a="approve" data-id="' + o.orderId + '">Approve</button>';
+      if (['PENDING', 'CLAIMED', 'SUBMITTED'].indexOf(o.status) >= 0) btns += '<button class="btn small bad" data-a="reject" data-id="' + o.orderId + '">Reject</button>';
       if (o.status === 'PAID') btns += '<button class="btn small ghost" data-a="copy" data-id="' + o.orderId + '">Copy confirmation</button>' +
         '<button class="btn small bad" data-a="release" data-id="' + o.orderId + '">Release slots</button>';
       return '<div class="card"><div><b>' + esc(o.name) + '</b> <span class="pill ' + o.status + '">' + o.status + '</span></div>' +

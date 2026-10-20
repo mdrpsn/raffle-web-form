@@ -4,8 +4,9 @@
  *
  * Slot lifecycle:  AVAILABLE -> PENDING (reserved) -> PAID (secured)
  * Order lifecycle: PENDING -> SUBMITTED (proof uploaded) -> PAID
- *                  An order that expires (no proof within holdMinutes), is rejected or is released
- *                  frees its slots and its row is deleted from the Orders sheet.
+ *                  PENDING -> CLAIMED ("I have paid", proof still to come) -> SUBMITTED -> PAID
+ *                  An order that expires (no proof within holdMinutes, or within claimHoldMinutes once
+ *                  CLAIMED), is rejected or is released frees its slots and its row is deleted.
  */
 
 var ORDER_COLS = ['OrderId', 'CreatedAt', 'Name', 'Mobile', 'Facebook', 'Slots', 'Amount',
@@ -21,6 +22,7 @@ var DEFAULTS = [
   ['price', 150],
   ['totalSlots', 100],
   ['holdMinutes', 30],
+  ['claimHoldMinutes', 1440], // how long a slot stays held after the customer says "I have paid" but has not uploaded proof
   ['maxSlotsPerOrder', 20],
   ['status', 'OPEN'],
   ['paymentInstructions', 'GCash: 09XX XXX XXXX (Account Name)\nMaya: 09XX XXX XXXX (Account Name)\nGoTyme: XXXX XXXX XXXX'],
@@ -91,7 +93,7 @@ function doPost(e) {
 }
 
 // Looked up at call time (not load time) so a half-pasted file still lets setup() run.
-function publicActions_() { return { board: board_, order: orderStatus_, reserve: reserve_, resume: resume_, proof: proof_ }; }
+function publicActions_() { return { board: board_, order: orderStatus_, reserve: reserve_, resume: resume_, claim: claim_, proof: proof_ }; }
 function adminActions_() { return { adminList: adminList_, approve: approve_, reject: reject_, release: release_, freeze: freeze_, draw: draw_ }; }
 
 var READ_ONLY = { board: 1, order: 1, resume: 1, adminList: 1 }; // any other action changes the board, so its cached copy is dropped
@@ -192,7 +194,7 @@ function readSlots_() {
 function sweepExpired_() {
   var now = Date.now();
   readOrders_().filter(function (o) {
-    return o.Status === 'PENDING' && Date.parse(o.ExpiresAt) < now;
+    return (o.Status === 'PENDING' || o.Status === 'CLAIMED') && Date.parse(o.ExpiresAt) < now;
   }).sort(function (a, b) { return b.row - a.row; }).forEach(function (o) { // bottom-up so row numbers stay valid
     setSlots_(o.slotList, 'AVAILABLE', '');
     ordersSheet_().deleteRow(o.row);
@@ -283,7 +285,7 @@ function reserve_(p) {
   uniq.forEach(function (n) { if (n % 1 || n < 1 || n > total) throw new Error('Invalid slot number.'); });
 
   var open = readOrders_().filter(function (o) {
-    return o.Mobile === mobile && (o.Status === 'PENDING' || o.Status === 'SUBMITTED');
+    return o.Mobile === mobile && (o.Status === 'PENDING' || o.Status === 'CLAIMED' || o.Status === 'SUBMITTED');
   });
   if (open.length >= 3) throw new Error('You already have 3 unpaid reservations. Please pay or wait for them to expire.');
 
@@ -309,11 +311,28 @@ function reserve_(p) {
     paymentInstructions: cfg.paymentInstructions };
 }
 
+/**
+ * "I have paid": the customer paid but cannot upload the screenshot yet (bad signal, big file).
+ * Keeps the slots held for claimHoldMinutes instead of letting the short hold run out and hand a paid number to someone else.
+ * Not a permanent hold: with no proof by then the order expires like any other, and the admin can reject it sooner.
+ */
+function claim_(p) {
+  sweepExpired_();
+  var o = findOrder_(p.orderId);
+  if (!o) throw new Error('This reservation expired or was cancelled. Please pick your numbers again.');
+  if (o.Status === 'CLAIMED' || o.Status === 'SUBMITTED') return { ok: true, status: o.Status, expiresAt: o.ExpiresAt };
+  if (o.Status !== 'PENDING') throw new Error('This order is already ' + o.Status + '.');
+  var minutes = Number(getConfig_().claimHoldMinutes) || 1440; // older sheets have no claimHoldMinutes row
+  var expires = new Date(Date.now() + minutes * 60000).toISOString();
+  setOrder_(o, { Status: 'CLAIMED', ExpiresAt: expires });
+  return { ok: true, status: 'CLAIMED', expiresAt: expires };
+}
+
 function proof_(p) {
   sweepExpired_();
   var o = findOrder_(p.orderId);
   if (!o) throw new Error('This reservation expired or was cancelled. Please pick your numbers again.');
-  if (o.Status !== 'PENDING' && o.Status !== 'SUBMITTED') throw new Error('This order is already ' + o.Status + '.');
+  if (['PENDING', 'CLAIMED', 'SUBMITTED'].indexOf(o.Status) < 0) throw new Error('This order is already ' + o.Status + '.');
 
   var mime = String(p.mime || '');
   if (['image/jpeg', 'image/png', 'image/webp'].indexOf(mime) < 0) throw new Error('Upload a JPG, PNG or WEBP image.');
@@ -363,13 +382,13 @@ function approve_(p) {
   var o = findOrder_(p.orderId);
   if (!o) throw new Error('Order not found.');
   if (o.Status === 'PAID') return { ok: true };
-  if (['PENDING', 'SUBMITTED'].indexOf(o.Status) < 0) throw new Error('Cannot approve an order that is ' + o.Status + '.');
+  if (['PENDING', 'CLAIMED', 'SUBMITTED'].indexOf(o.Status) < 0) throw new Error('Cannot approve an order that is ' + o.Status + '.');
   setSlots_(o.slotList, 'PAID', o.OrderId);
   setOrder_(o, { Status: 'PAID', PaidAt: new Date().toISOString() });
   return { ok: true };
 }
 
-function reject_(p) { return freeOrder_(p.orderId, ['PENDING', 'SUBMITTED']); }
+function reject_(p) { return freeOrder_(p.orderId, ['PENDING', 'CLAIMED', 'SUBMITTED']); }
 function release_(p) { return freeOrder_(p.orderId, ['PAID']); }
 
 /** Free the order's slots and delete its row, so rejected/released entries leave no trace in the sheet. */
@@ -396,7 +415,7 @@ function freeze_() {
   if (!rows.length) throw new Error('No paid entries to freeze.');
   // Release unpaid holds so nothing changes after the freeze.
   readOrders_().forEach(function (o) {
-    if (o.Status === 'PENDING' || o.Status === 'SUBMITTED') {
+    if (o.Status === 'PENDING' || o.Status === 'CLAIMED' || o.Status === 'SUBMITTED') {
       setSlots_(o.slotList, 'AVAILABLE', ''); setOrder_(o, { Status: 'REJECTED', Note: 'Not paid at freeze' });
     }
   });

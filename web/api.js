@@ -24,7 +24,7 @@
     var s = null; try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
     if (s) return s;
     s = { cfg: { clubName: CFG.CLUB_NAME || 'Club', name: 'Demo Paddle Raffle', price: 150, total: 100, status: 'OPEN',
-      holdMinutes: 30, maxSlotsPerOrder: 20,
+      holdMinutes: 30, claimHoldMinutes: 1440, maxSlotsPerOrder: 20,
       prizes: ['1st Prize: Demo Paddle', '2nd Prize: Free Open Play + grip tape', '3rd Prize: Free Open Play'],
       pay: 'GCash: 09XX XXX XXXX (Account Name)\nMaya: 09XX XXX XXXX (Account Name)' },
       slots: {}, orders: [], entries: null, winners: [] };
@@ -34,7 +34,7 @@
   function pub(name) { var p = name.trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1][0].toUpperCase() + '.' : p[0]; }
   function sweep(s) {
     s.orders.forEach(function (o) {
-      if (o.status === 'PENDING' && Date.parse(o.expiresAt) < Date.now()) { o.status = 'EXPIRED'; o.slots.forEach(function (n) { delete s.slots[n]; }); }
+      if ((o.status === 'PENDING' || o.status === 'CLAIMED') && Date.parse(o.expiresAt) < Date.now()) { o.status = 'EXPIRED'; o.slots.forEach(function (n) { delete s.slots[n]; }); }
     });
   }
   function find(s, id) { var o = s.orders.filter(function (x) { return x.orderId === id; })[0]; if (!o) throw new Error('Order not found.'); return o; }
@@ -71,10 +71,18 @@
       return { ok: true, orderId: id, slots: want, amount: o.amount, expiresAt: o.expiresAt, paymentInstructions: c.pay };
     },
     resume: function () { return { ok: false, notFound: true, error: 'No reservation found.' }; }, // demo calls never lose a response
+    claim: function (s, p) { // "I have paid" before the screenshot: keep the slots held for longer
+      var o = find(s, p.orderId);
+      if (o.status === 'EXPIRED') throw new Error('This reservation expired or was cancelled. Please pick your numbers again.');
+      if (o.status === 'CLAIMED' || o.status === 'SUBMITTED') return { ok: true, status: o.status, expiresAt: o.expiresAt };
+      if (o.status !== 'PENDING') throw new Error('This order is already ' + o.status + '.');
+      o.status = 'CLAIMED'; o.expiresAt = new Date(Date.now() + s.cfg.claimHoldMinutes * 60000).toISOString();
+      return { ok: true, status: 'CLAIMED', expiresAt: o.expiresAt };
+    },
     proof: function (s, p) {
       var o = find(s, p.orderId);
       if (o.status === 'EXPIRED') throw new Error('This reservation expired. Please pick your numbers again.');
-      if (o.status !== 'PENDING' && o.status !== 'SUBMITTED') throw new Error('This order is already ' + o.status + '.');
+      if (['PENDING', 'CLAIMED', 'SUBMITTED'].indexOf(o.status) < 0) throw new Error('This order is already ' + o.status + '.');
       o.status = 'SUBMITTED'; o.proofUrl = 'data:' + p.mime + ';base64,' + p.data; return { ok: true, status: 'SUBMITTED' };
     },
     order: function (s, p) {
@@ -92,12 +100,12 @@
     },
     approve: function (s, p) {
       var o = find(s, p.orderId); if (o.status === 'PAID') return { ok: true };
-      if (['PENDING', 'SUBMITTED', 'EXPIRED'].indexOf(o.status) < 0) throw new Error('Cannot approve an order that is ' + o.status + '.');
+      if (['PENDING', 'CLAIMED', 'SUBMITTED', 'EXPIRED'].indexOf(o.status) < 0) throw new Error('Cannot approve an order that is ' + o.status + '.');
       var gone = o.status === 'EXPIRED' ? o.slots.filter(function (n) { return s.slots[n]; }) : [];
       if (gone.length) throw new Error('Slots #' + gone.join(', #') + ' were taken by someone else after expiry.');
       o.status = 'PAID'; o.slots.forEach(function (n) { s.slots[n] = { status: 'PAID', orderId: o.orderId }; }); return { ok: true };
     },
-    reject: function (s, p) { return demo._free(s, p, 'REJECTED', ['PENDING', 'SUBMITTED']); },
+    reject: function (s, p) { return demo._free(s, p, 'REJECTED', ['PENDING', 'CLAIMED', 'SUBMITTED']); },
     release: function (s, p) { return demo._free(s, p, 'RELEASED', ['PAID']); },
     _free: function (s, p, ns, allowed) {
       var o = find(s, p.orderId); if (allowed.indexOf(o.status) < 0) throw new Error('Cannot do that to an order that is ' + o.status + '.');
@@ -109,7 +117,7 @@
       var e = Object.keys(s.slots).filter(function (n) { return s.slots[n].status === 'PAID'; }).map(function (n) {
         return { slot: Number(n), name: find(s, s.slots[n].orderId).name }; });
       if (!e.length) throw new Error('No paid entries to freeze.');
-      s.orders.forEach(function (o) { if (o.status === 'PENDING' || o.status === 'SUBMITTED') { o.slots.forEach(function (n) { delete s.slots[n]; }); o.status = 'REJECTED'; } });
+      s.orders.forEach(function (o) { if (o.status === 'PENDING' || o.status === 'CLAIMED' || o.status === 'SUBMITTED') { o.slots.forEach(function (n) { delete s.slots[n]; }); o.status = 'REJECTED'; } });
       s.entries = e; s.cfg.status = 'CLOSED'; return { ok: true, entries: e.length };
     },
     draw: function (s) {

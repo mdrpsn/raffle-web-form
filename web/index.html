@@ -131,6 +131,8 @@
       <input id="proof" type="file" accept="image/*">
       <div class="err" id="payErr"></div>
       <div class="row"><button class="btn" id="sendProof">Submit proof of payment</button></div>
+      <div class="row"><button class="btn ghost" id="claimPaid">I've paid, but I can't upload the screenshot now</button></div>
+      <div class="muted">Already paid and the upload keeps failing? Tap this to keep your numbers held, then upload the screenshot later from this page.</div>
       <div class="muted" style="margin-top:.6rem">Order ID: <b id="payOrderId"></b> — bookmark this page; it saves your order.</div>
     </div>
   </section>
@@ -305,6 +307,15 @@
     btn.disabled = false; btn.textContent = 'Submit proof of payment';
   };
 
+  // Customer says they paid but cannot upload yet: the server holds the numbers for longer so a paid number is not handed to someone else.
+  $('claimPaid').onclick = async function () {
+    var btn = $('claimPaid'); btn.disabled = true; $('payErr').textContent = '';
+    var r = await API.call('claim', { orderId: order.orderId });
+    btn.disabled = false;
+    if (!r.ok) { $('payErr').textContent = r.error; return; }
+    await showStatus(order.orderId);
+  };
+
   async function showStatus(id) {
     var r = await API.call('order', { orderId: id });
     if (r.network) { // keep the saved order; only a definite "not found" forgets it
@@ -313,12 +324,13 @@
     }
     if (!r.ok) { saveOrderId(null); show('stepPick'); await loadBoard(); return; }
     var o = r.order;
-    holding = o.status === 'PENDING' ? { orderId: o.orderId, slots: o.slots, amount: o.amount, expiresAt: o.expiresAt, paymentInstructions: o.paymentInstructions } : null;
+    holding = (o.status === 'PENDING' || o.status === 'CLAIMED') ? { orderId: o.orderId, slots: o.slots, amount: o.amount, expiresAt: o.expiresAt, paymentInstructions: o.paymentInstructions } : null;
     show('stepDone');
     var T = {
       PAID: ['✅ Payment confirmed!', 'Keep this confirmation until the live draw.'],
       SUBMITTED: ['⏳ Payment received — waiting for verification', 'We will confirm your slots shortly. Refresh this page to check.'],
       PENDING: ['Awaiting your payment', 'Your numbers are on hold. Tap below to see how to pay, then upload your screenshot before time runs out.'],
+      CLAIMED: ['⏳ Payment noted — please upload your screenshot', 'We are holding your numbers. Upload the screenshot as soon as you can, or the hold will be released when the time runs out.'],
       EXPIRED: ['Reservation expired', 'The hold ran out before proof was uploaded. Please pick your numbers again.'],
       REJECTED: ['Payment not verified', 'Please message the club for help.'],
       RELEASED: ['Slots released', 'These slots were released. Please message the club.'],
@@ -326,7 +338,8 @@
     $('doneTitle').textContent = T[0];
     $('doneBody').innerHTML = '<p class="muted">' + T[1] + '</p><p><b>' + esc(o.raffleName) + '</b><br>' + esc(o.name) +
       '<br>Slots: #' + o.slots.join(', #') + '<br>Amount: ' + peso(o.amount) + '<br>Status: <span class="pill ' + o.status + '">' + o.status + '</span>' +
-      '<br>Order ID: ' + esc(o.orderId) + '</p>' + (o.status === 'PENDING' ? '<button class="btn" id="resumePay">Proceed to payment</button>' : '');
+      '<br>Order ID: ' + esc(o.orderId) + '</p>' + (o.status === 'PENDING' ? '<button class="btn" id="resumePay">Proceed to payment</button>'
+      : o.status === 'CLAIMED' ? '<button class="btn" id="resumePay">Upload screenshot</button>' : '');
     var rp = $('resumePay'); if (rp) rp.onclick = function () { showPay({ orderId: o.orderId, slots: o.slots, amount: o.amount, expiresAt: o.expiresAt, paymentInstructions: o.paymentInstructions }); };
     if (o.status === 'EXPIRED' || o.status === 'REJECTED' || o.status === 'RELEASED') saveOrderId(null);
   }
